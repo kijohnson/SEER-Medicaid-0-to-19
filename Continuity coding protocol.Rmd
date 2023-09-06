@@ -1,0 +1,89 @@
+---
+title: "Protocol for Medicaid continuity variable coding"
+author: "Kim Johnson"
+date: "2023-09-06"
+output: html_document
+---
+
+### **A. Import and create dataframes and variables needed for continuity variable classifications**
+
+**1.	Import mcaid dataframe and reduce to patient ids and monthly enrollment variables.**    
+a.	The medicaid.enroll.txt file that was used to create the mcaid dataframe by coauthor DB contained all the enrollment values for each observation id’s months of linkage (mcaid1: mcaid96).  This dataframe was created in Stata.
+
+**2.	Import seer0to39 dataframe**       
+a.	The medicaid.cancer.txt file was used to create a file for those diagnosed at 0 to 39 years by coauthor KJ. This was done to reduce the size of the dataframe used for all paper-associated data management and analysis.
+
+**3.	Create seer0to39_formerge dataframe that includes observations with SEER variable values as:**    
+a.	Firstmalignantprimary_indicator = 1,
+b.	In_Medicaid_Flag = 1,
+c.	Sequence_number = 00 or 01 (this was necessary to exclude non-unique cases). 
+
+This creates a file with unique ids for continuity coding containing the SEER variables needed for step 5.
+
+**4.	Merge mcaid and seer0to39_formerge dataframes keeping only ids in seer0to39_formerge. These are the observation ids that will be coded for continuity.**    
+
+**5.	 Create variables needed for defining continuity in section B**        
+a.	Scale diagnosis and death month using SEER diagnosis/death month and year variables (Year_of_diagnosis, Month_of_diagnosis_recode, SEER_DateofDeath_Year, SEER_DateofDeath_Month) to months 1-96 (the months corresponding to available Medicaid linkage data) -> dxmo and dthmo)    
+b.	Define earlylate variable for observations diagnosed in the first 6 (1-6) or last 6 (91-96) months of the Medicaid observation window using dxmo since enrollment is not fully observable for these cases and they need to be handled as special cases for continuity coding. This is defined as dxmo < 7 or dxmo >90 -> earlylate    
+c.	Define status to indicate whether they were enrolled in the dxmo, not enrolled, or enrollment data was NA during the diagnosis month (coded as 1, 0, 9 respectively)    
+d.	Define vitalstat_post6 variable to indicate whether they died within the diagnosis month or months 1-5 following the dxmo    
+
+### **B. Continuity coding**
+
+**Non-special cases**     
+**1. Did not die within 6 months of diagnosis and not diagnosed in months 1 to 6 or 91 to 96) (dataframes = mcaid0to39_df1 and mcaid0to39_df2)**       
+&nbsp;•	Define pre_mo6 to indicate the number of months enrolled prior to the dx month. Possible values are 0:6 or NA    
+&nbsp;•	Define post_mo6 to indicate the number of months enrolled after the diagnosis month. Possible values are 0:6 or NA.   
+&nbsp;•	Define any_zero_pre and any_zero_post as binary variables if enrollment in any of the 6 months prior to diagnosis has a value of 0 or any of the 6 months following diagnosis = 0    
+&nbsp;•	mcontb (continuity variable) =     
+&nbsp;&nbsp;&nbsp;o	0 (continuous) if pre_mo6 = 6 and post_mo6 = 6 and status = 1,     
+&nbsp;&nbsp;&nbsp;o	1 (discontinuous) if status = 0 or any_zero_pre = 0 or any_zero_post = 0,     
+&nbsp;&nbsp;&nbsp;o	2 (other) is everyone else    
+&nbsp;•	Validate with random samples of 10 observations each for mcontb = 0,1,2. Manually looked at patterns in each of the six months around diagnosis month for each observation to validate. If any observation’s classification did not validate, corrected code, and validated again until 100% validated in each sample.    
+
+**Special cases**    
+**2. Died within 6 months of diagnosis, not diagnosed in months 1:6 or 91:96 (dataframe = mcaid0to39_df3)**    
+&nbsp;•	pre_mo6 and any_zero_pre defined as for non-special cases    
+&nbsp;•	sum_T1_post_todth defined as the sum of the enrollment values from the month after diagnosis to dthmo        
+&nbsp;•	mcontb (continuity variable) =     
+&nbsp;&nbsp;&nbsp;o	0 (continuous) if pre_mo6 = 6 and status = 1 and the sum_T1_post_todth ≥ dthmo-dxmo or dxmo = dthmo    
+&nbsp;&nbsp;&nbsp;o	1 (discontinuous) if any_zero_pre = 1 or status = 0 or sum_T1_post_todth < dthmo – dxmo     
+&nbsp;&nbsp;&nbsp;o	2 (other) is everyone else    
+&nbsp;•	Validate as above    
+
+**3.  Those diagnosed in months 1:6 and did not die within 6 months following diagnosis (dataframe = mcaid0to39_df4)**    
+&nbsp;•	post_mo6 defined same as in non-special cases    
+&nbsp;•	can only define this group as discontinuous or other because not enough pre data    
+&nbsp;•	mcontb (continuity variable) =     
+&nbsp;&nbsp;&nbsp;o	1 (discontinuous) if status = 0 or post_mo <6 or enrollment in any months prior to the dxmo has a value of 0    
+&nbsp;&nbsp;&nbsp;o	2 (other) is everyone else       
+&nbsp;•	Validate as above    
+
+|**4.  Those diagnosed in months 1:6 and died within 6 months following diagnosis (dataframe = mcaid0to39_df4b)**    
+&nbsp;• sum_T1_post_todth defined same as above    
+&nbsp;•	can only define this group as discontinuous or other because not enough pre data    
+&nbsp;mcontb (continuity variable) =            
+&nbsp;&nbsp;&nbsp;o 1 (discontinuous) if status = 0 or sum_T1_post_todth < dthmo-dxmo or any months prior to the dxmo = 0     
+&nbsp;&nbsp;&nbsp;o	2 (other) is everyone else    
+&nbsp;•	Validate as above    
+
+**5.   Those diagnosed in months 91:96 and who did not die within 6 months following dx or died after month 96 (dataframe = mcaid0to39_df5)**    
+&nbsp;•	pre_mo6 defined as for non-special cases    
+&nbsp;•	can only define discontinuous or other because not enough post data    
+&nbsp;•	mcontb (continuity variable) =     
+&nbsp;&nbsp;&nbsp;o	1 (discontinuous) if any months prior to dxmo have a value of 0 or status = 0 or pre_mo6 < 6    
+&nbsp;&nbsp;&nbsp;o	2 (other) is everyone else    
+&nbsp;•	Validate as above    
+
+**6. Those who died within 6 months of diagnosis and who were diagnosed in months 91 to 96 (dataframe = mcaid0to39_df6)**    
+&nbsp;•	pre_mo6 defined as for non-special cases    
+&nbsp;•	can define as continuous, discontinuous, and other    
+&nbsp;•	mcontb (continuity variable) =     
+&nbsp;&nbsp;&nbsp;o	0 (continuous) = if pre_mo6 = 6 and status = 1 and enrollment data in all months from diagnosis month up to and including dthmo has a value of 1     
+&nbsp;&nbsp;&nbsp;o	1 (discontinuous) if enrollment data in any month prior to dxmo has a value of 0 or pre_mo6 <6 or status = 0    
+&nbsp;&nbsp;&nbsp;o	2 (other) is everyone else    
+&nbsp;•	Validate as above    
+
+### **C. Merging**    
+mcaid0to39 dataframe: Merge mcaid0to39_df1:mcaid0to39_df6 to get medicaid continuity classifications. This dataframe containing mcontb gets merged with the analytic dataset in Figure 1 for analysis.
+
