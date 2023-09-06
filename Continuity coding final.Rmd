@@ -1,0 +1,521 @@
+---
+title: "SEER Medicaid"
+author: "Kim Johnson"
+date: 
+output: html_document
+---
+
+# Open libraries
+```{r}
+# install.packages("pacman") 
+pacman::p_load(readr, dplyr, tidyverse, openxlsx) # installs if not installed and opens library
+```
+# A Import and create dataframes and variables needed for continuity variable classifications
+
+# Steps A1 and A2
+- Import mcaid file made by co-author DB that has enrollment data coded for each month 2006 through 2013
+- Import SEER0to39 file (created from medicaid.cancer.text file and limited to those diagnosed between ages 0 to 39 years)
+```{r}
+# A1
+mcaid <- read_csv("/Volumes/kijohnson/Active/mcseer_dsb/archive/mcseer_dsb.csv") # created by coauthor DB
+
+mcaid <- mcaid %>%
+  select(1:97) # keep just mcaid variables that give monthly enrollment classification (0 = not enrolled, 1 = enrolled, NA) and patient id
+
+# A2
+seer0to39<-read_csv("/Volumes/kijohnson/Active/seer0to39.csv") # this is 0 to 39 cancer patient data, created by KJ in paper analysis code
+```
+
+# Steps A3 
+- Limit SEER0to39 file with exclusions that are the same as the analytic dataset used for the paper analysis
+- Merge variables from SEER and mcaid data 
+- Create variables  needed for continuity variable construction (dxmo, dthmo, earlylate)
+```{r}
+# need this dataset for merge for exclusions becasue the mcaid file was not all unique ids
+seer0to39_formerge <- seer0to39 %>% # created by KJ step A2 of protocol
+select(patient_id, Year_of_diagnosis, Month_of_diagnosis_recode, Month_of_diagnosis, SEER_DateofDeath_Year, SEER_DateofDeath_Month, Firstmalignantprimary_indicator, Sequence_number, In_Medicaid_Flag) %>% 
+  filter(Firstmalignantprimary_indicator == 1, In_Medicaid_Flag == 1) %>%
+  filter(Sequence_number %in% c("00","01")) # to get unique ids
+```
+
+# Step A4
+```{r}
+mcaid0to39<- left_join(seer0to39_formerge, mcaid,  by = "patient_id")  # left with unique SEER ids 0 to 39
+```
+
+# Step A5a
+- scale diagnosis and death month variables
+```{r}
+# Add 0, 12, 36, 48, 60, 72, and 84 to dx mo and death mo for diagnosis years and death years 2006 to 2013, respectively to get dxmo and deathmo on 1 to 96 (or higher for dthmo) 
+mcaid0to39 <- mcaid0to39 %>%
+  mutate(dxmo = case_when(Year_of_diagnosis == 2006 ~ Month_of_diagnosis_recode + 0,
+                          Year_of_diagnosis == 2007 ~ Month_of_diagnosis_recode + 12,
+                          Year_of_diagnosis == 2008 ~ Month_of_diagnosis_recode + 24,
+                          Year_of_diagnosis == 2009 ~ Month_of_diagnosis_recode + 36,
+                          Year_of_diagnosis == 2010 ~ Month_of_diagnosis_recode + 48,
+                          Year_of_diagnosis == 2011 ~ Month_of_diagnosis_recode + 60,
+                          Year_of_diagnosis == 2012 ~ Month_of_diagnosis_recode + 72,
+                          Year_of_diagnosis == 2013 ~ Month_of_diagnosis_recode + 84))
+
+
+mcaid0to39$SEER_DateofDeath_Month <- as.numeric(mcaid0to39$SEER_DateofDeath_Month)
+
+mcaid0to39 <- mcaid0to39 %>%
+  mutate(dthmo = case_when(SEER_DateofDeath_Year == 2006 ~ SEER_DateofDeath_Month + 0,
+                          SEER_DateofDeath_Year  == 2007 ~ SEER_DateofDeath_Month + 12,
+                          SEER_DateofDeath_Year  == 2008 ~ SEER_DateofDeath_Month + 24,
+                          SEER_DateofDeath_Year  == 2009 ~ SEER_DateofDeath_Month + 36,
+                          SEER_DateofDeath_Year  == 2010 ~ SEER_DateofDeath_Month + 48,
+                          SEER_DateofDeath_Year  == 2011 ~ SEER_DateofDeath_Month + 60,
+                          SEER_DateofDeath_Year  == 2012 ~ SEER_DateofDeath_Month + 72,
+                          SEER_DateofDeath_Year  == 2013 ~ SEER_DateofDeath_Month + 84,
+                          SEER_DateofDeath_Year  == 2014 ~ SEER_DateofDeath_Month + 96,
+                          SEER_DateofDeath_Year  == 2015 ~ SEER_DateofDeath_Month + 108,
+                          SEER_DateofDeath_Year  == 2016 ~ SEER_DateofDeath_Month + 120,
+                          SEER_DateofDeath_Year  == 2017 ~ SEER_DateofDeath_Month + 132,
+                          SEER_DateofDeath_Year  == 2018 ~ SEER_DateofDeath_Month + 144)) 
+```
+
+# Step A5b
+- define earlylate
+```{r}
+mcaid0to39 <- mcaid0to39 %>%
+  mutate(earlylate = if_else(dxmo<7| dxmo>90, 1, 0))
+
+# check
+table(mcaid0to39$earlylate, useNA = "always")
+```
+
+# Step A5c
+- define status of enrollment during diagnosis month variable
+```{r}
+mcaid0to39 <- mcaid0to39 %>%
+  rowwise() |>
+  mutate(status = rowSums(dplyr::pick(starts_with("mcaid_"))[, dxmo])) |> # this code finds the value in the mcaid variable matching the diagnosis number and puts that value in a new variable called status
+  ungroup() %>%
+# recode NAs as 9
+  mutate(status = case_when(is.na(status) ~ 9,
+                              !is.na(status) ~ status))
+
+# check
+table(mcaid0to39$status, useNA = "always")
+```
+
+# Step A5d
+- define vitalstat_post 6 to indicate whether they died within 6 months of diagnosis
+```{r}
+mcaid0to39 <- mcaid0to39 %>%
+  mutate(dthmo_dxmo_diff = dthmo - dxmo) %>%
+  mutate(vitalstat_post6 = if_else(dthmo_dxmo_diff <6, 1, 0, missing = 0)) # variable for selection of cases alive or who died but have 6 months of follow-up >0, missing = 0 codes missing as 0
+
+# check
+table(mcaid0to39$vitalstat_post6, useNA = "always")
+```
+
+# Validation: check status coding in random sample of 10 for each status 0, 1, 9
+```{r}
+set.seed(10)
+status0 <- mcaid0to39 %>% filter(status == 0)
+check_dx0 <- status0[sample(nrow(status0), 10),] # all validate
+write.xlsx(check_dx0, file="/Users/kimjohnson/Desktop/Validation/status0.xlsx", showNA=TRUE, overwrite = TRUE)
+
+set.seed(10)
+status1 <- mcaid0to39 %>% filter(status == 1)
+check_dx1 <- status1[sample(nrow(status1), 10),] # all validate
+write.xlsx(check_dx1, file="/Users/kimjohnson/Desktop/Validation/status1.xlsx", showNA=TRUE, overwrite = TRUE)
+
+set.seed(10)
+status9 <- mcaid0to39 %>% filter(status == 9)
+check_dx9 <- status9[sample(nrow(status9), 10),] # all validate
+write.xlsx(check_dx9, file="/Users/kimjohnson/Desktop/Validation/status9.xlsx", showNA=TRUE, overwrite = TRUE)
+```
+
+# B: Continuity coding
+
+# Create T1_pre to T6_post variables for creation of pre_mo6, post_mo6, any_zeros_pre and any_zeros_post variables in B
+```{r}
+# make T1 to T6 pre and post variables to use below to identify values for each mcaid variable in the 6 months pre and post dx
+mcaid0to39 <- mcaid0to39 %>% 
+  mutate(T1_pre = dxmo-6) %>%
+  mutate(T2_pre = dxmo-5) %>%
+  mutate(T3_pre = dxmo-4) %>%
+  mutate(T4_pre = dxmo-3) %>%
+  mutate(T5_pre = dxmo-2) %>%
+  mutate(T6_pre = dxmo-1) %>%
+  mutate(T1_post = dxmo+1) %>%
+  mutate(T2_post = dxmo+2) %>%
+  mutate(T3_post = dxmo+3) %>%
+  mutate(T4_post = dxmo+4) %>%
+  mutate(T5_post = dxmo+5) %>%
+  mutate(T6_post = dxmo+6)
+
+# assign all NAs for mcaid variables a value of 999 because rowwise/rowSums functions won't work with NAs
+mcaid0to39df <- mcaid0to39 %>%
+  select(patient_id, mcaid_1:mcaid_96) %>%
+  mutate_all(~replace(., is.na(.), 999))
+
+# merge back in with mcaid0to39
+mcaid0to39 <- left_join(mcaid0to39df, mcaid0to39 %>% select(-c(mcaid_1:mcaid_96)), by = "patient_id")
+```
+
+# B. 
+# B1. Non-special cases (not diagnosed in 1-6 or 91-96 and did not die within 6 month of dx)
+- define pre_mo6 and post_mo6 period variables by summing values of mcaid variables 6 months pre and 6 months post dx
+- define any_zero_pre and any_zero_post
+```{r}
+mcaid0to39_df1 <- mcaid0to39 %>%
+  filter(vitalstat_post6 == 0 & earlylate == 0) %>% 
+  select(patient_id, mcaid_1:mcaid_96, status, T1_pre, T2_pre, T3_pre, T4_pre, T5_pre, T6_pre,
+         T1_post, T2_post, T3_post, T4_post, T5_post, T6_post, dxmo, dthmo) %>%
+  rowwise() |>
+  mutate(pre_mo6 = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_pre:T6_pre])) |> 
+  mutate(post_mo6 = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_post:T6_post])) |> 
+  ungroup() %>%
+  
+# anything greater than 6 assign an NA (this is because there were 999s)
+  mutate(pre_mo6 = case_when(pre_mo6 > 6 ~ NA,
+                               pre_mo6 <=6 ~ pre_mo6)) %>%
+  mutate(post_mo6 = case_when(post_mo6 > 6 ~ NA,
+                               post_mo6 <=6 ~ post_mo6)) 
+
+# Defining variables that are used to determine whether there are any zeros pre and post diagnosis 6 month periods
+# This gets values for each mcaid variable 6 mnths pre and post
+mcaid0to39_df2 <- mcaid0to39_df1 %>%
+  rowwise() |>
+  mutate(T1_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_pre])) |> 
+  mutate(T2_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T2_pre])) |>
+  mutate(T3_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T3_pre])) |>
+  mutate(T4_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T4_pre])) |>
+  mutate(T5_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T5_pre])) |>
+  mutate(T6_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T6_pre])) |>
+  
+  mutate(T1_post_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_post])) |> 
+  mutate(T2_post_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T2_post])) |>
+  mutate(T3_post_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T3_post])) |>
+  mutate(T4_post_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T4_post])) |>
+  mutate(T5_post_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T5_post])) |>
+  mutate(T6_post_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T6_post])) |>
+  ungroup() %>%
+  
+  # this determines whether there are any zeros pre_mo and post mo
+  mutate(any_zero_pre = if_else((T1_pre_val == 0 | T2_pre_val == 0 | T3_pre_val == 0 |
+                                  T4_pre_val == 0 | T5_pre_val == 0 | T6_pre_val == 0), 1, 0 )) %>%
+  mutate(any_zero_post = if_else((T1_post_val == 0 | T2_post_val == 0 | T3_post_val == 0 |
+                                  T4_post_val == 0 | T5_post_val == 0 | T6_post_val == 0), 1, 0 ))
+```
+
+# Validate pre_mo6, post_mo6, and any_zero_pre/any_zero_post in a sample of 10
+```{r}
+set.seed(10)
+check_df2a <- mcaid0to39_df2[sample(nrow(mcaid0to39_df2), 10),] # all variables validate
+write.xlsx(check_df2a, file="/Users/kimjohnson/Desktop/Validation/df2a_vars.xlsx", showNA=TRUE, overwrite = TRUE)
+```
+
+# Now we can define continuity for this group (vitalstat_post6 == 0 & earlylate == 0)
+```{r}
+mcaid0to39_df2 <- mcaid0to39_df2 %>%
+  
+# continuouus
+mutate(mcontb = case_when(pre_mo6 == 6 & post_mo6 ==6 & status == 1 ~ 0, 
+                          
+# discontinuous
+                          status ==0 | any_zero_pre == 1 | any_zero_post == 1 ~ 1)) %>% 
+# other
+mutate(mcontb = case_when (is.na(mcontb) ~ 2, # code rest as other
+                            !is.na(mcontb) ~ mcontb)) # size is 43832
+```
+
+# Validate mcontb for this set in a sample of 10 each for mcontb = 0, 1, 2
+```{r}
+set.seed(10)
+check_df2_0 <- mcaid0to39_df2 %>% filter(mcontb ==0)
+check_df2_0 <- check_df2_0[sample(nrow(check_df2_0), 10),] # validates
+write.xlsx(check_df2_0, file="/Users/kimjohnson/Desktop/Validation/df2_mcontb0.xlsx", showNA=TRUE, overwrite = TRUE)
+
+set.seed(10)
+check_df2_1 <- mcaid0to39_df2 %>% filter(mcontb == 1)
+check_df2_1 <- check_df2_1[sample(nrow(check_df2_1), 10),] # validates
+write.xlsx(check_df2_1, file="/Users/kimjohnson/Desktop/Validation/df2_mcontb1.xlsx", showNA=TRUE, overwrite = TRUE)
+
+set.seed(10)
+check_df2_2 <- mcaid0to39_df2 %>% filter(mcontb == 2)
+check_df2_2 <- check_df2_2[sample(nrow(check_df2_2), 10),] # validates
+write.xlsx(check_df2_2, file="/Users/kimjohnson/Desktop/Validation/df2_mcontb2.xlsx", showNA=TRUE, overwrite = TRUE)
+```
+
+# B. Special cases
+# B2. died within 6 months dx date not earlylate 
+```{r}
+mcaid0to39_df3 <- mcaid0to39 %>%
+  filter(vitalstat_post6 == 1 & earlylate != 1) %>% # selecting these cases
+  rowwise() |>
+  # getting their enrollment values prior to dx
+  mutate(T1_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_pre])) |> 
+  mutate(T2_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T2_pre])) |>
+  mutate(T3_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T3_pre])) |>
+  mutate(T4_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T4_pre])) |>
+  mutate(T5_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T5_pre])) |>
+  mutate(T6_pre_val = rowSums(dplyr::pick(starts_with("mcaid_"))[, T6_pre])) |>
+
+  ungroup() %>%
+  
+  # defining any zeros pre_mo
+  mutate(any_zero_pre = if_else((T1_pre_val == 0 | T2_pre_val == 0 | T3_pre_val == 0 |
+                                  T4_pre_val == 0 | T5_pre_val == 0 | T6_pre_val == 0), 1, 0 )) %>%
+  select(patient_id, mcaid_1:mcaid_96, status, status, T1_pre, T2_pre, T3_pre, T4_pre, T5_pre, T6_pre, T1_post, T2_post, T3_post, T4_post, T5_post, T6_post, T1_pre_val, T2_pre_val, T3_pre_val, T4_pre_val, T5_pre_val, T6_pre_val, earlylate, dxmo, dthmo, dthmo_dxmo_diff, any_zero_pre) %>%
+  rowwise() |>
+  
+  # getting sum of number of months enrolled pre
+  mutate(pre_mo6 = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_pre:T6_pre])) |> 
+  ungroup() %>%
+  
+  # anything greater than 6 assign an NA (because of addition of 999s)
+  mutate(pre_mo6 = case_when(pre_mo6 > 6 ~ NA,
+                               pre_mo6 <=6 ~ pre_mo6)) %>%  
+  rowwise() |>
+  
+  mutate(sum_T1_post_todth = rowSums(dplyr::pick(starts_with("M"))[, T1_post:dthmo])) |> # this finds the mcaid variable for the month after the death month and sums through the mcaid variable for the death month
+  ungroup() %>% 
+  mutate(sum_T1_post_todth = case_when(sum_T1_post_todth <= 5 ~ sum_T1_post_todth, # assign back to NA because of 999's
+                                       sum_T1_post_todth >5 ~ NA)) %>%
+  # continuous
+  mutate(mcontb = case_when(pre_mo6 == 6 & status == 1 & (sum_T1_post_todth >=dthmo-dxmo|dxmo == dthmo) ~ 0, 
+                            
+  # discontinuous
+                            any_zero_pre == 1 | status ==0 | sum_T1_post_todth < dthmo-dxmo ~ 1)) %>% 
+  
+  # other
+  mutate(mcontb = case_when (is.na(mcontb) ~ 2, # code rest as other
+                           !is.na(mcontb) ~ mcontb)) 
+```
+
+# validate
+```{r}
+set.seed(10)
+check_df3_0 <- mcaid0to39_df3 %>% filter(mcontb ==0)
+check_df3_0 <- check_df3_0[sample(nrow(check_df3_0), 10),] # validates
+write.xlsx(check_df3_0, file="/Users/kimjohnson/Desktop/Validation/df3_mcontb0.xlsx", showNA=TRUE, overwrite = TRUE)
+
+set.seed(10)
+check_df3_1 <- mcaid0to39_df3 %>% filter(mcontb == 1)
+check_df3_1 <- check_df3_1[sample(nrow(check_df3_1), 10),] # validates
+write.xlsx(check_df3_1, file="/Users/kimjohnson/Desktop/Validation/df3_mcontb1.xlsx", showNA=TRUE, overwrite = TRUE)
+
+set.seed(10)
+check_df3_2 <- mcaid0to39_df3 %>% filter(mcontb == 2)
+check_df3_2 <- check_df3_2[sample(nrow(check_df3_2), 10),] # validates
+write.xlsx(check_df3_2, file="/Users/kimjohnson/Desktop/Validation/df3_mcontb2.xlsx", showNA=TRUE, overwrite = TRUE)
+```
+
+# B3. Did not die or did not die within 6 months of dxmo and dxmo is in 1 to 6 
+```{r}
+mcaid0to39_df4 <- mcaid0to39 %>%
+  filter(earlylate == 1 & dxmo %in% c(1:6) & vitalstat_post6 ==0)  %>%
+  rowwise() |>
+  mutate(post_mo6 = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_post:T6_post])) |> 
+  ungroup() %>%
+  
+  # anything greater than 6 assign an NA (because of addition of 999s)
+  mutate(post_mo6 = case_when(post_mo6 > 6 ~ NA,
+                               post_mo6 <=6 ~ post_mo6)) %>%  
+  select(patient_id, mcaid_1:mcaid_13, dxmo, dthmo, status, post_mo6,  vitalstat_post6) %>% 
+  
+  # discontinuous
+  mutate(mcontb = case_when(vitalstat_post6 ==0 & dxmo == 1 & (status == 0 | post_mo6 <6) ~ 1,
+                            vitalstat_post6 ==0 & dxmo == 2 & (mcaid_1 == 0 | status == 0) |post_mo6 <6 ~ 1,
+                            vitalstat_post6 ==0 & dxmo == 3 & (mcaid_1 == 0 | mcaid_2 == 0 | status == 0) | post_mo6 <6 ~ 1,
+                            vitalstat_post6 ==0 & dxmo == 4 & (mcaid_1 == 0 | mcaid_2 == 0 | mcaid_3 == 0 |status == 0) |post_mo6 <6 ~ 1,
+                            vitalstat_post6 ==0 & dxmo == 5 & (mcaid_1 == 0 | mcaid_2 ==0 | mcaid_3 == 0 | mcaid_4 == 0 |status == 0) |post_mo6 <6 ~ 1,
+                            vitalstat_post6 ==0 & dxmo == 6 & (mcaid_1 == 0 | mcaid_2 ==0 | mcaid_3 == 0 | mcaid_4 == 0 | mcaid_5 == 0 |status == 0) |post_mo6 <6 ~ 1)) %>% 
+  # other
+                             mutate(mcontb = case_when(is.na(mcontb) ~ 2,
+                            !is.na(mcontb) ~ mcontb))
+```
+
+# Validate
+```{r}
+set.seed(10)
+check_df4_1 <- mcaid0to39_df4 %>% filter(mcontb == 1)
+check_df4_1 <- check_df4_1[sample(nrow(check_df4_1), 10),] # validates
+write.xlsx(check_df4_1, file="/Users/kimjohnson/Desktop/Validation/df4_mcontb1.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+
+set.seed(10)
+check_df4_2 <- mcaid0to39_df4 %>% filter(mcontb == 2)
+check_df4_2 <- check_df4_2[sample(nrow(check_df4_2), 10),] # validates
+write.xlsx(check_df4_2, file="/Users/kimjohnson/Desktop/Validation/df4_mcontb2.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+```
+
+# B4. Died within 6 months of dxmo and dxmo is in 1 to 6
+```{r}
+mcaid0to39_df4b <- mcaid0to39 %>%
+  filter(earlylate == 1 & dxmo %in% c(1:6) & vitalstat_post6 ==1)  %>%
+  rowwise() |>
+  mutate(post_mo6 = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_post:T6_post])) |> 
+  ungroup() %>%
+  
+  # anything greater than 6 assign an NA (because of addition of 999s)
+  mutate(post_mo6 = case_when(post_mo6 > 6 ~ NA,
+                               post_mo6 <=6 ~ post_mo6)) %>%  
+  select(patient_id, mcaid_1:mcaid_13, dxmo, dthmo, status, vitalstat_post6, T1_post:T6_post) %>% 
+  
+  
+  rowwise() |>
+  mutate(sum_T1_post_todth = rowSums(dplyr::pick(starts_with("M"))[, T1_post:dthmo])) |>  # this finds the mcaid variable for the month after the diagnosis month and sums through the mcaid variable for the death month
+  ungroup() %>%
+  mutate(sum_T1_post_todth = case_when(sum_T1_post_todth <= 5 ~ sum_T1_post_todth, # assign back to NA because of 999's
+                                       sum_T1_post_todth >5 ~ NA)) %>%
+  
+  # discontinuous
+  mutate(mcontb = case_when(dxmo == 1 & (status ==0 | (sum_T1_post_todth < dthmo-dxmo)) ~ 1, 
+                                      dxmo == 2 & (mcaid_1 == 0 | status == 0 | (sum_T1_post_todth < dthmo-dxmo)) ~ 1,
+                                      dxmo == 3 & (mcaid_1 == 0 | mcaid_2 == 0 | status == 0 | (sum_T1_post_todth < dthmo-dxmo)) ~ 1,
+                                      dxmo == 4 & (mcaid_1 == 0 | mcaid_2 == 0 | mcaid_3 == 0 | status == 0 |  (sum_T1_post_todth < dthmo-dxmo))~ 1,
+                                      dxmo == 5 & (mcaid_1 == 0 | mcaid_2 == 0 | mcaid_3 ==0 | mcaid_4 ==0 | status ==0 |  (sum_T1_post_todth < dthmo-dxmo)) ~ 1,
+                                      dxmo == 6 & (mcaid_1 == 0 | mcaid_2 ==0 | mcaid_3 == 0 | mcaid_4 ==0 | mcaid_5 == 0 | status ==0 | (sum_T1_post_todth < dthmo-dxmo)) ~ 1)) %>%
+ 
+  # other                      
+  mutate(mcontb = case_when(is.na(mcontb) ~ 2,
+                           !is.na(mcontb) ~ mcontb)) 
+```
+
+# Validate
+```{r}
+set.seed(10)
+check_df4_1b <- mcaid0to39_df4b %>% filter(mcontb == 1)
+check_df4_1b <- check_df4_1b[sample(nrow(check_df4_1b), 10),] # validates
+write.xlsx(check_df4_1b, file="/Users/kimjohnson/Desktop/Validation/df4b_mcontb1.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+
+set.seed(10)
+check_df4_2b <- mcaid0to39_df4b %>% filter(mcontb == 2)
+check_df4_2b <- check_df4_2b[sample(nrow(check_df4_2b), 10),] # validates
+write.xlsx(check_df4_2b, file="/Users/kimjohnson/Desktop/Validation/df4b_mcontb2.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+```
+
+# B5. Diagnosed in months 91:96 and didn't die in months 91 to 96 or died after month 96
+```{r}
+mcaid0to39_df5<- mcaid0to39 %>%
+  filter((vitalstat_post6 ==0 | dthmo >96) & earlylate == 1 & dxmo %in% c(91:96)) %>%
+  rowwise() |>
+  mutate(pre_mo6 = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_pre:T6_pre])) |> 
+  ungroup() %>%
+  # anything greater than 6 assign an NA (because of addition of 999s)
+  mutate(pre_mo6 = case_when(pre_mo6 > 6 ~ NA,
+                               pre_mo6 <=6 ~ pre_mo6)) %>%  
+
+  select(patient_id, mcaid_82:mcaid_96, dxmo, status, pre_mo6) %>% # if any of mcaid up to dx month  = 0 then discontinuous, need to do this for each dx month occurring 91 to 96
+  
+  # discontinuous
+  mutate(mcontb = case_when(dxmo == 96 & (status == 0 | pre_mo6 <6) ~ 1,
+                            dxmo == 95 & (mcaid_96 == 0 | pre_mo6 <6) ~ 1,
+                            dxmo == 94 & (mcaid_96 == 0 | mcaid_95 == 0 | status == 0 | pre_mo6<6) ~ 1,
+                            dxmo == 93 & (mcaid_96 == 0 | mcaid_95 == 0 | mcaid_94 == 0 | status == 0 |pre_mo6<6)~ 1,
+                            dxmo == 92 & (mcaid_96 == 0 | mcaid_95 == 0 | mcaid_94 == 0 | mcaid_93 == 0 |status == 0 | pre_mo6) <6 ~ 1,
+                            dxmo == 91 & (mcaid_96 == 0 | mcaid_95 == 0 | mcaid_94 == 0 | mcaid_93 == 0 | mcaid_92 == 0 |status == 0 | pre_mo6<6) ~ 1)) %>%
+  
+  # other
+  mutate(mcontb = case_when(is.na(mcontb) ~ 2,
+                            !is.na(mcontb) ~ mcontb))
+ 
+```
+
+# Validate
+```{r}
+set.seed(10)
+check_df5_1 <- mcaid0to39_df5 %>% filter(mcontb == 1)
+check_df5_1 <- check_df5_1[sample(nrow(check_df5_1), 10),] # validates
+write.xlsx(check_df5_1, file="/Users/kimjohnson/Desktop/Validation/df5_mcontb1.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+
+set.seed(10)
+check_df5_2 <- mcaid0to39_df5 %>% filter(mcontb == 2)
+check_df5_2 <- check_df5_2[sample(nrow(check_df5_2), 10),] # validates
+write.xlsx(check_df5_2, file="/Users/kimjohnson/Desktop/Validation/df5_mcontb2.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+```
+
+# B6. Diagnosed in months 91:96 and died in months 91 to 96
+```{r}
+mcaid0to39_df6<- mcaid0to39 %>%
+  filter((vitalstat_post6 == 1 & dthmo <=96)  & earlylate == 1 & dxmo %in% c(91:96)) %>%
+  rowwise() |>
+  mutate(pre_mo6 = rowSums(dplyr::pick(starts_with("mcaid_"))[, T1_pre:T6_pre])) |> 
+  ungroup() %>%
+  # anything greater than 6 assign an NA (because of addition of 999s)
+  mutate(pre_mo6 = case_when(pre_mo6 > 6 ~ NA,
+                               pre_mo6 <=6 ~ pre_mo6)) %>%  
+
+  select(patient_id, mcaid_82:mcaid_96, dxmo, status, pre_mo6, dthmo) %>%
+  
+  mutate(mcontb = case_when(status == 0 |pre_mo6 < 6 ~ 1,
+                            status == 1 & pre_mo6 == 6 & (dxmo == dthmo) ~ 0)) %>%
+# code NAs
+
+  mutate(mcontb = case_when(!is.na(mcontb) ~ mcontb,
+                            # discontinuous
+                            dthmo == 91 & (pre_mo6 <6 | status == 0) & is.na(mcontb) ~ 1,
+                            dthmo == 92 & (pre_mo6 <6 | status == 0 | mcaid_92 == 0) &  is.na(mcontb) ~ 1,
+                            dthmo == 93 & (pre_mo6 <6 | status == 0 | mcaid_92 == 0| mcaid_93 ==0) &  is.na(mcontb) ~ 1,
+                            dthmo == 94 & (pre_mo6 <6 | status == 0 | mcaid_92 == 0| mcaid_93 ==0 | mcaid_94 ==0) &  is.na(mcontb) ~ 1,
+                            dthmo == 95 & (pre_mo6 <6 | status == 0 | mcaid_92 == 0| mcaid_93 ==0 | mcaid_94 ==0 | mcaid_95 == 0) &  is.na(mcontb) ~ 1,
+                            dthmo == 96 & (pre_mo6 <6 | status == 0 | mcaid_92 == 0| mcaid_93 ==0 | mcaid_94 ==0 | mcaid_95 == 0 | mcaid_96 == 0) &  is.na(mcontb) ~ 1,
+                            
+                            # continuous
+                            dthmo == 91 & (pre_mo6 == 6 & status == 1) & is.na(mcontb) ~ 0,
+                            dthmo == 92 & (pre_mo6 == 6 & status == 1 & mcaid_92 == 1) &  is.na(mcontb) ~ 0,
+                            dthmo == 93 & (pre_mo6 == 6 & status == 1 & mcaid_92 == 1| mcaid_93 == 1) &  is.na(mcontb) ~ 0,
+                            dthmo == 94 & (pre_mo6 == 6 & status == 1 & mcaid_92 == 1| mcaid_93 == 1 & mcaid_94 ==1) &  is.na(mcontb) ~ 0,
+                            dthmo == 95 & (pre_mo6 == 6 & status == 1 & mcaid_92 == 1| mcaid_93 == 1 & mcaid_94 ==1 & mcaid_95 == 1) &  is.na(mcontb) ~ 0,
+                            dthmo == 96 & (pre_mo6 == 6 & status == 1 & mcaid_92 == 1| mcaid_93 == 1 & mcaid_94 ==1 & mcaid_95 == 1 | mcaid_96 == 1) &  is.na(mcontb) ~ 0)) %>%
+
+                            # other
+                            mutate(mcontb = case_when(is.na(mcontb) ~2,
+                                                      !is.na(mcontb) ~ mcontb))
+```
+
+# Validate
+```{r}
+set.seed(10)
+check_df6_0 <- mcaid0to39_df6 %>% filter(mcontb == 0)
+check_df6_0 <- check_df6_0[sample(nrow(check_df6_0), 10),] # validates
+write.xlsx(check_df6_0, file="/Users/kimjohnson/Desktop/Validation/df6_mcontb0.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+
+set.seed(10)
+check_df6_1 <- mcaid0to39_df6 %>% filter(mcontb == 1)
+check_df6_1 <- check_df6_1[sample(nrow(check_df6_1), 10),] # validates
+write.xlsx(check_df6_1, file="/Users/kimjohnson/Desktop/Validation/df6_mcontb1.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+
+set.seed(10)
+check_df6_2 <- mcaid0to39_df6 %>% filter(mcontb == 2)
+check_df6_2 <- check_df6_2 [sample(nrow(check_df6_2 ), 10),] # validates
+write.xlsx(check_df6_2, file="/Users/kimjohnson/Desktop/Validation/df6_mcontb2.xlsx", showNA=TRUE, overwrite = TRUE) # Validated
+```
+
+
+# need to merge it all back together after validation above
+```{r}
+# prepare dfs for merging mcaid0to39_df2, df3, df4, df5, df6
+
+mcaid0to39_df2 <- mcaid0to39_df2 %>% 
+  select(patient_id, mcontb)
+
+mcaid0to39_df3 <- mcaid0to39_df3 %>% 
+  select(patient_id, mcontb)
+
+mcaid0to39_df4 <- mcaid0to39_df4 %>% 
+  select(patient_id, mcontb)
+
+mcaid0to39_df4b <- mcaid0to39_df4b %>% 
+  select(patient_id, mcontb)
+
+mcaid0to39_df5 <- mcaid0to39_df5 %>% 
+  select(patient_id, mcontb)
+
+mcaid0to39_df6 <- mcaid0to39_df6 %>% 
+  select(patient_id, mcontb)
+
+mcaid0to39 <- rbind(mcaid0to39_df2, mcaid0to39_df3, mcaid0to39_df4, mcaid0to39_df4b, mcaid0to39_df5, mcaid0to39_df6)
+
+
+# export for use in analysis 
+write.xlsx(mcaid0to39, file="/Volumes/kijohnson/Active/mcaid0to39KJ.xlsx", showNA=TRUE, overwrite = TRUE)
+```
+
+

@@ -1,0 +1,2315 @@
+---
+title: "SEER Medicaid"
+author: "Kim Johnson"
+date: '2022-06-06'
+output: html_document
+---
+
+# Open libraries
+```{r}
+# install.packages("pacman")
+pacman::p_load(readr, dplyr, tidyverse, lubridate, survival, survminer, hablar, table1, patchwork, openxlsx, DiagrammeR, lmtest, forestplot, MASS, nnet, broom, forcats, sandwich, mlogit, sjstats, odds.n.ends, labelled, readxl)
+```
+# Functions used
+```{r}
+# function to calculate clustered SEs (from: https://stackoverflow.com/questions/73136246/clustered-standard-errors-stars-and-summary-statistics-in-modelsummary-for-mul)
+mlogit.clust <- function(model,data,variable) {
+  beta <- c(t(coef(model)))
+  vcov <- vcov(model)
+  k <- length(beta)
+  n <- nrow(data)
+  max_lev <- length(model$lev)
+  xmat <- model.matrix(model)
+  # u is deviance residuals times model.matrix
+  u <- lapply(2:max_lev, function(x)
+    residuals(model, type = "response")[, x] * xmat)
+  u <- do.call(cbind, u)
+  m <- dim(table(data[,variable]))
+  u.clust <- matrix(NA, nrow = m, ncol = k)
+  fc <- factor(data[,variable])
+  for (i in 1:k) {
+    u.clust[, i] <- tapply(u[, i], fc, sum)
+  }
+  cl.vcov <- vcov %*% ((m / (m - 1)) * t(u.clust) %*% (u.clust)) %*% vcov
+  return(cl.vcov = cl.vcov)
+}
+```
+# Import files sent by SEER Medicaid (IMS), get data into right columns, and assign column names
+```{r, eval =FALSE}
+# # Medicaid enrollment--imports fixed width columns and gives them names
+# enroll <- read_fwf('medicaid.enroll.txt', 
+#                fwf_cols(patient_id = 15, STATE_CD = 2, YEAR = 4, DOB_MATCH_SCORE_HI = 1, SEX_MATCH_SCORE_HI = 1,
+#                        ID_MATCH_SCORE_HI=1, MATCH_SCORE_HI=2, MEDICAID_ELIG_CD1=1, MEDICAID_ELIG_CD2=1,
+#                       MEDICAID_ELIG_CD3=1, MEDICAID_ELIG_CD4=1, MEDICAID_ELIG_CD5=1, MEDICAID_ELIG_CD6=1,
+#                       MEDICAID_ELIG_CD7=1, MEDICAID_ELIG_CD8=1, MEDICAID_ELIG_CD9=1, MEDICAID_ELIG_CD10=1,
+#                         MEDICAID_ELIG_CD11=1, MEDICAID_ELIG_CD12=1), 
+#                skip = 0)
+
+# # SEER file (2 is the second dataseet received that includes insurance variables)
+# 
+# seer<-read_fwf('medicaid.cancer 2.txt', na=".", fwf_positions(
+# c(1, 16,18,20,21,22,24,25,28,31,33,35,39,41,45,46,50,51,55,56,57,58,59,62,64,66,67,69, 71, 72,73,74,75,76,77,78,79,80,81,82,83,84,86,88,90,92,94,95,96,97,98,99,100,103,106,109, 111,114,117,120,123,126,129,132,135,138,141,144,147,150,153,156, 159,161,163,165,167,168,174,180,186,188,189,190,192,193,194,195,196,197,199, 200,201,203,205,210,213,216,217,219,224,227,228,229,230,231,233,235,236,238,241,242, 243,248, 253, 254, 255,256, 258,263,264,265,266,267,268,269,270,271,273,279,282,285,288,291,293,295,297,299, 300,301,302,303,304,305,306,308,310,316,347,353,359,365,366,367,368,369,378,380,382,384,388,401,402,403,404,405, 406,408,412,414, 419, 423,425,427,429, 431,433,437,438,439,440,441,442,443,445, 447, 448, 452, 456, 460, 464,465,466,467,468,469,470, 471,472,473,474,475,476,477, 479, 480,485,490,495,500,505, 510,511,512,513,514,515,519,520, 521,524,525,526,530,532), 
+ 
+# c(15,17,19,20,21,23,24,27,30,32,34,38,40,44,45,49,50,54,55,56,57,58,61,63,65,66,68,70,71, 72,73,74,75,76,77,78,79,80,81,82,83,84,86,88,90,93,94,95,96,97,98, 99,102,105,108,110,113,116,119,122,125,128,131,134,137, 140, 143,146,149,152,155,158,160,162,164,166,167,173,179, 185,187,188,189,191, 192,193,194,195,195, 198,199, 200,202,204,209,212,215,216,218,220, 226,227,228,229,230,232,234,235,237,240,241,242,247, 252, 253, 254,255,257, 259, 263,264,265,266,267,268,269,270, 272,273,281,284,287,290,292,294,295,298,299, 300, 301,302,303,304,305,307, 309,311,316,352,358, 364,365,366,367,368,369, 379,381,383,387,391,401,402,403,404,405, 407,411,413,417, 422,424,426,428,430, 432,436,437,438,439,440,441,442,444,446, 447, 451, 455,459,463,464, 465, 466,467,468,469,470, 471,472,473,474,475,476,477,479, 484,489,494,499,504,509,510,511,512,513,514,515,519,520, 523,524,525,529,531,534)))
+
+# colnames(seer)<- c("patient_id", "SEER_registry", "SEERregistrywithCAandGAaswholes", 
+# "Louisiana20051stvs2ndhalfofyear", "Marital_
+# _at_diagnosis", 
+# "Race_ethnicity", "sex", "Agerecodewithsingleages_and_100", "agerecodewithsingle_ages_and_85", 
+# "Sequence_number", "Month_of_diagnosis", "Year_of_diagnosis", 
+# "Month_of_diagnosis_recode", "Primary_Site", "Laterality", "Histology_ICD_O_2", 
+# "Behavior_code_ICD_O_2", "Histologic_Type_ICD_O_3", "Behavior_code_ICD_O_3", 
+# "Grade", "Diagnostic_Confirmation", "Type_of_Reporting_Source", 
+# "EOD_10_size_1988_2003", "EOD_10_extent_1988_2003", "EOD10Prostatepath_ext_1995_2003", 
+# "EOD_10_nodes_1988_2003", "Regional_nodes_positive_1988", "Regional_nodes_examined_1988", 
+# "Expanded_EOD_1_CP53_1973_1982", "Expanded_EOD_2_CP54_1973_1982", 
+# "Expanded_EOD_3_CP55_1973_1982", "Expanded_EOD_4_CP56_1973_1982", 
+# "Expanded_EOD_5_CP57_1973_1982", "Expanded_EOD_6_CP58_1973_1982", 
+# "Expanded_EOD_7_CP59_1973_1982", "Expanded_EOD_8_CP60_1973_1982",
+# "Expanded_EOD_9_CP61_1973_1982", "Expanded_EOD_10_CP62_1973_1982",
+# "Expanded_EOD_11_CP63_1973_1982", "Expanded_EOD_12_CP64_1973_1982",
+# "Expanded_EOD_13_CP65_1973_1982", "V2Digit_NS_EOD_part_1_1973_1982",
+# "V2Digit_NS_EOD_part_2_1973_1982", "V2Digit_SS_EOD_part_1_1973_1982",
+# "V2Digit_SS_EOD_part_2_1973_1982", "EOD_4_size_1983_1987", "EOD_4_extent_1983_1987",
+# "EOD_4_nodes_1983_1987", "Coding_system_EOD_1973_2003", "Tumor_marker_1_1990_2003",
+# "Tumor_marker_2_1990_2003", "Tumor_marker_3_1998_2003", "CS_tumor_size_2004_2015",
+# "CS_extension_2004_2015", "CS_lymph_nodes_2004_2015", "CS_mets_at_dx_2004_2015",
+# "CSsitespecificfactor12004varyin", "CSsitespecificfactor22004varyin",
+# "CSsitespecificfactor32004varyin", "CSsitespecificfactor42004varyin",
+# "CSsitespecificfactor52004varyin", "CSsitespecificfactor62004varyin",
+# "CSsitespecificfactor72004varyin", "CSsitespecificfactor82004varyin",
+# "CSsitespecificfactor92004varyin", "CSsitespecificfactor102004varyi",
+# "CSsitespecificfactor112004varyi", "CSsitespecificfactor122004varyi",
+# "CSsitespecificfactor132004varyi", "CSsitespecificfactor152004varyi",
+# "CSsitespecificfactor162004varyi", "CSsitespecificfactor252004varyi",
+# "Derived_AJCC_T_6th_ed_2004_2015", "Derived_AJCC_N_6th_ed_2004_2015",
+# "Derived_AJCC_M_6th_ed_2004_2015", "DerivedAJCCStageGroup6thed20042",
+# "SEERCombinedSummaryStage2000200", "CSversioninputoriginal2004_2015",
+# "CS_version_derived_2004_2015", "CSversioninputcurrent_2004_2015",
+# "RX_Summ_Surg_Prim_Site_1998", "RX_Summ_Scope_Reg_LN_Sur_2003",
+# "RX_Summ_Surg_Oth_Reg_Dis_2003", "RXSummReg_LN_Examined_1998_2002",
+# "RX_Summ_Systemic_Surg_Seq", "RX_Summ_Surg_Rad_Seq", "Reasonnocancer_directed_surgery",
+# "Radiation_recode", "Chemotherapy_recode_yes_no_unk", "Sitespecificsurgery19731997vary",
+# "Scopeofreglymphndsurg_1998_2002", "Surgeryofothregdissites19982002",
+# "Record_number_recode", "Age_recode_with_1_year_olds", "Site_recode_ICD_O_3_WHO_2008",
+# "ICCCsiterecode_ICD_O_3_WHO_2008", "ICCCsiterecextendedICDO3WHO2008",
+# "Behavior_recode_for_analysis", "Histologyrecode_broad_groupings",
+# "Histologyrecode_Brain_groupings", "TNM_7_CS_v0204_Schema", "Race_recode_White_Black_Other",
+# "Race_recode_W_B_AI_API", "OriginrecodeNHIAHispanicNonHisp",
+# "SEER_historic_stage_A_1973_2015", "AJCCstage_3rd_edition_1988_2003",
+# "SEERmodifiedAJCCstage3rd1988200", "Firstmalignantprimary_indicator",
+# "state", "county", "PRCDA_2017", "PRCDA_Region", "COD_to_site_recode",
+# "COD_to_site_rec_KM", "Vital
+# recodestudycutoffuse", "IHS_Link",
+# "Summary_stage_2000_1998", "AYA_site_recode_WHO_2008", "Lymphomasubtype_recode_WHO_2008",
+# "SEERcausespecificdeathclassific", "SEERothercauseofdeathclassifica",
+# "CSTumor_Size_Ext_Eval_2004_2015", "CS_Reg_Node_Eval_2004_2015",
+# "CS_Mets_Eval_2004_2015", "Primary_by_international_rules", "ER
+# RecodeBreastCancer_1990",
+# "PR
+# RecodeBreastCancer_1990", "CS_Schema_AJCC_6th_Edition",
+# "LymphvascularInvasion2004varyin", "Derived_AJCC_T_7th_ed_2010",
+# "Derived_AJCC_N_7th_ed_2010", "Derived_AJCC_M_7th_ed_2010", "DerivedAJCCStageGroup7thed_2010",
+# "BreastAdjustedAJCC6thT1988_2015", "BreastAdjustedAJCC6thN1988_2015",
+# "BreastAdjustedAJCC6thM1988_2015", "BreastAdjustedAJCC6thStage19882",
+# "Derived_HER2_Recode_2010", "Breast_Subtype_2010", "LymphomaAnnArborStage_1983_2015",
+# "SEERCombinedMetsat_DX_bone_2010", "SEERCombinedMetsatDX_brain_2010",
+# "SEERCombinedMetsatDX_liver_2010", "SEERCombinedMetsat_DX_lung_2010",
+# "TvaluebasedonAJCC_3rd_1988_2003", "NvaluebasedonAJCC_3rd_1988_2003",
+# "MvaluebasedonAJCC_3rd_1988_2003", "RadiationtoBrainorCNSRecode1988",
+# "Census_Tract_1990", "Census_Tract_2000", "Census_Tract_2010",
+# "Census_Coding_System", "Census_Tract_Certainty_1990", "Census_Tract_Certainty_2000",
+# "Census_Tract_Certainty_2010", "Census_Tract_Poverty_Indicator",
+# "Rural_Urban_Continuum_Code_1993", "Rural_Urban_Continuum_Code_2003",
+# "Rural_Urban_Continuum_Code_2013", "Health_Service_Area", "HealthService_Area_NCI_Modified",
+# "Derived_SS1977_flag", "Derived_SS2000_flag", "Firstcourseofreconstruct1998200",
+# "Radiation", "RadiationtoBrainorCNS_1988_1997", "SEER_DateofDeath_Month",
+# "SEER_DateofDeath_Year", "Month_of_last_follow_up_recode", "Year_of_last_follow_up_recode",
+# "Year_of_birth", "Date_of_diagnosis_flag", "Date_therapy_started_flag",
+# "Date_of_birth_flag", "Date_of_last_follow_up_flag", "Month_therapy_started",
+# "Year_therapy_started", "Other_cancer_directed_therapy", "Derived_AJCC_flag",
+# "Derived_SS1977", "Derived_SS2000", "SEER_Summary_stage_1977_9500",
+# "SEER_Summary_stage_2000_0103", "NAPIIA_Derived_API_Race", "Primary_Payer_at_DX",
+# "COD_ICD_code", "Cause_of_Death_ICD_8_or_9", "Cause_of_Death_ICD_10",
+# "Recode_ICD_0_2_to_9", "Recode_ICD_0_2_to_10", "NHIA_Derived_Hisp_Origin",
+# "Age_site_edit_override", "Sequencenumber_dx_conf_override",
+# "Site_type_lat_seq_override", "Surgerydiagnostic_conf_override",
+# "Site_type_edit_override", "Histology_edit_override", "Report_source_sequence_override",
+# "Seq_ill_defined_site_override", "LeukLymphdxconfirmationoverride",
+# "Site_behavior_override", "Site_EOD_dx_date_override", "Site_laterality_EOD_override",
+# "Site_laterality_morph_override", "Insurance_Recode_2007", "Yost_ACS_2006_2010",
+# "Yost_ACS_2010_2014", "Yost_ACS_2013_2017", "Yost_ACS_2006_2010_State_based",
+# "Yost_ACS_2010_2014_State_based", "Yost_ACS_2013_2017_State_based",
+# "Yost_ACS_2006_2010_quintile", "Yost_ACS_2010_2014_quintile",
+# "Yost_ACS_2013_2017_quintile", "YostACS20062010quintileStatebas",
+# "YostACS20102014quintileStatebas", "YostACS20132017quintileStatebas",
+# "HPV_recode_2010", "In_Medicaid_Flag", "OncotypeDXBreastRecurrenceScore",
+# "OncotypeDXRSgroupRS18RS1830RS30", "OncotypeDXreasonno_score_linked",
+# "Oncotype_DX_year_of_test_report", "OncotypeDX_month_of_test_report",
+# "OncotypeDXmonthssince_diagnosis")
+
+# hit control shift c while highlighting above to uncomment/comment section
+```
+
+# Create dataframes for Medicaid enrollment and SEER for export that are limited to those diagnosed at 0 to 39 years 
+# Exclude those over 39 years old and export data to make the datasets more manageeable on import
+```{r}
+# exclude those 40 and over from seer cancer filefirst
+# seer_0to39<-seer %>%
+#   filter(Agerecodewithsingleages_and_100<40)
+
+# get ids from seer file to limit enrollment file to those ids
+
+# ids<-seer_0to39$patient_id
+
+# enroll_seerids<-enroll %>% # limit Medicaid enrollment file to SEER ids
+ # filter(patient_id %in% ids)
+```
+
+# Export these data as csv files for quicker import
+```{r}
+# write.csv(seer_0to39,"seer0to39.csv", row.names = FALSE)
+ 
+# write.csv(enroll_seerids,"enroll_seerids.csv", row.names = FALSE)
+```
+
+# Import files created with text commented out above for analysis
+```{r}
+seer0to39<-read_csv("/Volumes/kijohnson/Active/seer0to39.csv", show_col_types = FALSE) # this is 0 to 39 cancer patient data
+enroll_seerids<-read_csv("/Volumes/kijohnson/Active/enroll_seerids.csv", show_col_types = FALSE) # this is 0 to 39 enrollee data
+mcaid<- read_xlsx("/Volumes/kijohnson/Active/mcaid0to39KJ.xlsx") # created in continuity coding file
+```
+
+
+# Identify ids to exclude where patient has Medicaid files in multiple states (this is used below)
+```{r}
+df <- enroll_seerids %>% 
+   find_duplicates(patient_id, YEAR) # this identifies patients in multiple states in the same year
+ 
+x <- unique(df$patient_id) # 841 vector of unique ids who had enrollment in multiple states to exclude in exclusion section
+```
+
+# Reduce cancer dataset to variables needed for analysis
+```{r}
+# select variables
+seer0to39<-seer0to39 %>%
+  dplyr::select("patient_id", "SEER_registry",  "Race_ethnicity", "sex", "Agerecodewithsingleages_and_100",
+"Sequence_number", "Month_of_diagnosis", "Year_of_diagnosis",
+"Month_of_diagnosis_recode", "Primary_Site", "Laterality", "Histology_ICD_O_2",
+"Behavior_code_ICD_O_2", "Histologic_Type_ICD_O_3", "Behavior_code_ICD_O_3",
+"Grade", "Diagnostic_Confirmation", "Type_of_Reporting_Source", 
+"Derived_AJCC_T_6th_ed_2004_2015", 
+"Derived_AJCC_N_6th_ed_2004_2015",
+"Derived_AJCC_M_6th_ed_2004_2015", 
+"DerivedAJCCStageGroup6thed20042",
+"SEERCombinedSummaryStage2000200", 
+"Age_recode_with_1_year_olds", "Site_recode_ICD_O_3_WHO_2008",
+"ICCCsiterecode_ICD_O_3_WHO_2008", "ICCCsiterecextendedICDO3WHO2008",
+"Behavior_recode_for_analysis", "Histologyrecode_broad_groupings", "Race_recode_White_Black_Other",
+"Race_recode_W_B_AI_API", "OriginrecodeNHIAHispanicNonHisp",
+"SEER_historic_stage_A_1973_2015", "AJCCstage_3rd_edition_1988_2003",
+"SEERmodifiedAJCCstage3rd1988200", "Firstmalignantprimary_indicator",
+"state", "county", "PRCDA_2017", "PRCDA_Region", "COD_to_site_recode",
+"COD_to_site_rec_KM", "Vitalstatusrecodestudycutoffuse", "IHS_Link",
+"Summary_stage_2000_1998", "AYA_site_recode_WHO_2008", 
+"SEERcausespecificdeathclassific", "SEERothercauseofdeathclassifica",
+"Derived_AJCC_T_7th_ed_2010", "Derived_AJCC_N_7th_ed_2010", "Derived_AJCC_M_7th_ed_2010", "DerivedAJCCStageGroup7thed_2010", "Census_Tract_1990", "Census_Tract_2000", "Census_Tract_2010",
+"Census_Coding_System", "Census_Tract_Certainty_1990", "Census_Tract_Certainty_2000",
+"Census_Tract_Certainty_2010", "Census_Tract_Poverty_Indicator",
+"Rural_Urban_Continuum_Code_1993", "Rural_Urban_Continuum_Code_2003",
+"Rural_Urban_Continuum_Code_2013", "Health_Service_Area", "HealthService_Area_NCI_Modified",
+"SEER_DateofDeath_Month", "SEER_DateofDeath_Year", "Month_of_last_follow_up_recode", "Year_of_last_follow_up_recode", "Year_of_birth", "Date_of_diagnosis_flag", "Date_therapy_started_flag",
+"Date_of_birth_flag", "Date_of_last_follow_up_flag", "Month_therapy_started",
+"Year_therapy_started",  "Derived_AJCC_flag",
+"SEER_Summary_stage_1977_9500",
+"SEER_Summary_stage_2000_0103", "NAPIIA_Derived_API_Race", "Primary_Payer_at_DX",
+"COD_ICD_code", "Cause_of_Death_ICD_8_or_9", "Cause_of_Death_ICD_10",
+"Recode_ICD_0_2_to_9", "Recode_ICD_0_2_to_10", "NHIA_Derived_Hisp_Origin",
+"Insurance_Recode_2007", "Yost_ACS_2006_2010", "Yost_ACS_2010_2014", "Yost_ACS_2013_2017", "Yost_ACS_2006_2010_State_based", "Yost_ACS_2010_2014_State_based", "Yost_ACS_2013_2017_State_based",
+"Yost_ACS_2006_2010_quintile", "Yost_ACS_2010_2014_quintile",
+"Yost_ACS_2013_2017_quintile", "YostACS20062010quintileStatebas",
+"YostACS20102014quintileStatebas", "YostACS20132017quintileStatebas",
+"HPV_recode_2010", "In_Medicaid_Flag")
+```
+
+# Data management of variables 
+```{r}
+# recode demographic variables
+# Age, race, hispanic, sex  cause of death, cause specfic death
+seer0to39<-seer0to39 %>%
+  mutate(age_cat=case_when(Age_recode_with_1_year_olds %in% c(0,1) ~ 0, # 0 to 4
+                                Age_recode_with_1_year_olds == 2 ~1, # 5 to 9
+                                Age_recode_with_1_year_olds == 3 ~2, # 10 to 14
+                                Age_recode_with_1_year_olds == 4 ~3, # 15 to 19
+                                Age_recode_with_1_year_olds %in% c(5,6,7,8) ~ 4)) %>% # 20 to 39
+         
+         mutate(race_cat=case_when(Race_recode_W_B_AI_API == 1 ~0, # White
+                                Race_recode_W_B_AI_API == 2 ~1, # Black
+                                Race_recode_W_B_AI_API == 3 ~2, # AIAN
+                                Race_recode_W_B_AI_API == 4 ~3, # API
+                                Race_recode_W_B_AI_API == 9 ~4)) %>% # Unknown
+  
+        mutate(hispanic = case_when(OriginrecodeNHIAHispanicNonHisp == 0 ~0, # Non-Hispanic
+                                    OriginrecodeNHIAHispanicNonHisp == 1 ~1)) %>% # Hispanic
+  
+        mutate(race_ethnicity = case_when(race_cat == 0 & hispanic == 0 ~ 0, # Non-Hispanic White
+                                race_cat == 1 & hispanic == 0 ~ 1, # Non-Hispanic Black
+                                race_cat == 3 & hispanic == 0 ~ 2, # Non-Hispanic API
+                                race_cat %in% c(2,4) & hispanic == 0 ~ 3, # Non-Hispanic Other
+                                race_cat %in% c(0:4) & hispanic == 1 ~ 4)) %>% # Hispanic
+        
+        mutate(race_cat2 = case_when(race_cat == 0 ~ 0, # Non-Hispanic White
+                                     race_cat == 1 ~ 1, # Non-Hispanic Black
+                                     race_cat %in% c(2,3,4,5) ~ 2)) %>% # Non-Hispanic Other
+  
+        mutate(sex = case_when(sex == 1 ~ 0, # "Male"
+                                sex == 2 ~ 1, # "Female"
+                                sex == 9 ~ 2)) %>% # "Unknown"
+  
+        mutate(can_dead = case_when(SEERcausespecificdeathclassific == 0 ~0, # Alive or dead of other cause
+                                SEERcausespecificdeathclassific == 1 ~1)) # Dead from cancer
+# note 8 an 9 are missing or N/A
+
+table(seer0to39$SEERcausespecificdeathclassific, useNA = "always")
+
+# Factor variables
+seer0to39$age_cat<-factor(seer0to39$age_cat, levels=c(0:4), labels=c("0-4", "5-9", "10-14", "15-19", "20-39"))
+seer0to39$race_cat<-factor(seer0to39$race_cat, levels=c(0:4), labels=c("White", "Black", "AIAN", "API", "Unknown"))
+seer0to39$hispanic<-factor(seer0to39$hispanic, levels=c(0:1), labels=c("Non-Hispanic", "Hispanic"))
+seer0to39$race_ethnicity<-factor(seer0to39$race_ethnicity, levels=c(0:4), labels=c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic API", "Non-Hispanic Other",  "Hispanic")) 
+seer0to39$sex <- factor(seer0to39$sex, levels = c(0:2), labels = c("Male", "Female", "Not Stated"))
+
+# check variables
+table(seer0to39$age_cat, useNA = "always")
+table(seer0to39$race_cat, useNA = "always")
+table(seer0to39$hispanic, useNA = "always")
+table(seer0to39$race_ethnicity, useNA = "always")
+table(seer0to39$can_dead, useNA = "always")
+table(seer0to39$sex, useNA = "always")
+
+# calculate follow-up time from month of dx, recode year of dx TO Month_of_last_follow_up_recode, Year_of_last_follow_up_recode. The difference between these variable dates would provide months of follow-up
+summary(seer0to39$Month_of_diagnosis_recode)
+summary(seer0to39$Year_of_diagnosis)
+summary(as.numeric(seer0to39$Month_of_last_follow_up_recode))
+seer0to39$Month_of_last_follow_up_recode<-as.numeric(seer0to39$Month_of_last_follow_up_recode) # make variable numeric
+seer0to39$SEER_DateofDeath_Month<-as.numeric(seer0to39$SEER_DateofDeath_Month) # make variable numeric
+summary(seer0to39$Month_of_last_follow_up_recode)
+summary(seer0to39$Year_of_last_follow_up_recode)
+summary(seer0to39$SEER_DateofDeath_Month)
+summary(seer0to39$SEER_DateofDeath_Year)
+
+# assign a date of diagnosis using 15 as the day because there is no day of dx so assume mean is 15
+seer0to39$proxy_day_of_dx <-15
+seer0to39$proxy_day_of_fu <-15
+seer0to39$proxy_day_of_dth <-15
+
+seer0to39<-seer0to39 %>%
+  mutate(proxy_dx_date = make_date(Year_of_diagnosis, Month_of_diagnosis_recode, proxy_day_of_dx)) %>% # make date of dx
+  mutate(proxy_fu_date = make_date(Year_of_last_follow_up_recode, Month_of_last_follow_up_recode, proxy_day_of_fu)) %>% # make date of follow-up
+  mutate(proxy_dth_date = make_date(SEER_DateofDeath_Year, SEER_DateofDeath_Month, proxy_day_of_dth)) # make date of death
+
+# calculate the difference in days between the estimated date of dx and estimated date of last follow-up for non-cases
+
+# non-cases
+seer0to39_noncases <- seer0to39 %>%
+  filter(can_dead == 0|is.na(can_dead)) # used last follow-up for missing can_dead
+seer0to39_noncases$survday<-as.numeric(difftime(seer0to39_noncases$proxy_fu_date, seer0to39_noncases$proxy_dx_date, units=c("days")))
+
+# cases
+seer0to39_cases <- seer0to39 %>%
+  filter(can_dead == 1)
+seer0to39_cases$survday <-as.numeric(difftime(seer0to39_cases$proxy_dth_date, seer0to39_cases$proxy_dx_date, units=c("days")))
+
+summary(seer0to39_noncases$proxy_fu_date)
+summary(seer0to39_cases$proxy_fu_date)
+
+# bind these back together
+seer0to39 <- rbind(seer0to39_cases, seer0to39_noncases)
+
+# estimate follow-up months by dividing by the average number of days in a month
+seer0to39$fumo<-seer0to39$survday/30.437
+
+summary(seer0to39$fumo)
+
+# cancer type coding
+table(seer0to39$ICCCsiterecode_ICD_O_3_WHO_2008)
+
+# ICCC3 (https://seer.cancer.gov/iccc/iccc-who2008.html)
+seer0to39<-seer0to39 %>%
+  mutate(can_type = case_when(
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(11, 12,13,14,15)~0,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(21,22,23,24,25)~1,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(31,32,33,34,35,36)~2,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(41,42) ~3,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(50) ~4,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(61,62,63) ~5,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(71,72,73) ~6,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(81,82, 83,84,85) ~7,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(91,92,93,94,95)~8,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(101,102,103, 104,105) ~9,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(111,112,113,114,115,116) ~10,
+    ICCCsiterecode_ICD_O_3_WHO_2008 %in% c(121,122)~11))
+
+seer0to39$can_type<-factor(seer0to39$can_type, levels=c(0:11), labels=c(
+  "I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases",
+  "II. Lymphomas and reticuloendothelial neoplasms",
+  "III. CNS and miscellaneous intracranial and intraspinal neoplasms",
+  "IV. Neuroblastoma and other peripheral nervous cell tumors",
+  "V. Retinoblastoma",
+  "VI. Renal tumors",
+  "VII. Hepatic tumors",
+  "VIII. Malignant bone tumors",
+  "IX. Soft tissue and other extraosseous sarcomas",
+  "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads",
+  "XI. Other malignant epithelial neoplasms and malignant melanomas",
+  "XII. Other and unspecified malignant neoplasms"))
+    
+table(seer0to39$can_type, seer0to39$ICCCsiterecode_ICD_O_3_WHO_2008, useNA= "always")  
+
+table(seer0to39$AYA_site_recode_WHO_2008)
+
+# use Yost index as a measure of poverty
+table(seer0to39$Yost_ACS_2006_2010_quintile,  useNA = "always")
+
+class(seer0to39$Yost_ACS_2006_2010_quintile)
+
+seer0to39$Yost_ACS_2006_2010_quintile <-factor(seer0to39$Yost_ACS_2006_2010_quintile, levels = c(1:5), labels = c(
+        "Group 1 (lowest SES)",
+        "Group 2",
+        "Group 3",
+        "Group 4",
+        "Group 5 (highest SES)"))
+
+# classify stage
+table(seer0to39$SEERCombinedSummaryStage2000200, useNA = "always")
+seer0to39 <- seer0to39 %>%
+  mutate(stage = case_when(SEERCombinedSummaryStage2000200 %in% c(0,1) ~ 0,
+                           SEERCombinedSummaryStage2000200 %in% c(2,3,4,5) ~ 1,
+                           SEERCombinedSummaryStage2000200 %in% c(7) ~ 2))
+
+seer0to39$stage <- factor(seer0to39$stage, levels = c(0:2), labels = c("In situ/localized", "Regional", "Distant"))
+
+table(seer0to39$stage, useNA ="always")
+
+#
+table(seer0to39$SEER_DateofDeath_Year, useNA = "always")
+
+```
+
+# Exclusions
+
+# make separate dataframe for 0 to 19 
+```{r}
+seer0to19 <- seer0to39 %>%
+  filter(age_cat %in% c("0-4", "5-9", "10-14", "15-19")) # 34,196
+
+seer0to19$age_cat <- droplevels(seer0to19$age_cat)
+```
+
+# limit to first cancers
+```{r}
+seer0to19 <- seer0to19 %>%
+  filter(Firstmalignantprimary_indicator == 1) # 32,396
+```
+# limit to sequence number 01 or 00
+```{r}
+seer0to19 <- seer0to19 %>%
+  filter(Sequence_number %in% c("00", "01")) # 32,380
+```
+
+# Exclude those diagnosed before 2006 (a handful)
+```{r}
+seer0to19 <- seer0to19 %>%
+  filter(Year_of_diagnosis >=2006) # 32,380
+```
+
+# Exclude multiple state Medicaid ids within a single year defined above
+```{r}
+seer0to19 <- seer0to19 %>% 
+  filter(!patient_id %in% x) # 31,562
+```
+
+# Exclude those with Medicaid cancer registry match scores below  5
+```{r}
+match <- enroll_seerids %>%
+  filter(MATCH_SCORE_HI <5)
+
+# create list of unique ids to exclude
+ids_2_exclude <- unique(match$patient_id)
+
+seer0to19 <- seer0to19 %>%
+  filter(!patient_id %in% ids_2_exclude) # 31,410
+```
+
+# Exclude those with missing data on variables used in the analysis
+```{r}
+seer0to19<-seer0to19 %>%
+  filter(!is.na(fumo)) #31,410
+
+seer0to19<-seer0to19 %>%
+  filter(!is.na(can_dead)) # 31,247
+
+seer0to19<-seer0to19 %>%
+  filter(!is.na(In_Medicaid_Flag)) # 31,247
+
+seer0to19<-seer0to19 %>%
+  filter(!is.na(race_ethnicity)) # 31,247
+
+seer0to19<-seer0to19 %>%
+  filter(!is.na(age_cat)) # 31,247
+
+seer0to19<-seer0to19 %>%
+  filter(!is.na(Yost_ACS_2006_2010_quintile)) #30,654
+
+
+seer0to19b <- seer0to19
+
+missing_data_percent  <- 100- (30654/31410)*100
+missing_data_percent  # <2.5%
+```
+
+# merge in mcont (medicaid enrollment data and recode 0 = Not linked, 1 = continuous, 2 = discontinuous, 3 = Other)
+```{r}
+seer0to19 <- left_join(seer0to19b, mcaid, by = "patient_id")
+
+table(seer0to19$mcontb, useNA = "always")
+table(mcaid$mcontb, useNA = "always")
+table(seer0to19$In_Medicaid_Flag)
+
+# recode a category for not in medicaid
+seer0to19 <- seer0to19 %>%
+  mutate(mcont66 = case_when(In_Medicaid_Flag == 0 ~ 0, # not linked
+                             mcontb == 0 ~ 1, # continuous
+                             mcontb == 1 ~ 2, # discontinuous
+                             mcontb == 2 ~ 3)) # Other
+table(seer0to19$mcont66, useNA = "always")
+
+table(seer0to19$mcont66, seer0to19$In_Medicaid_Flag, useNA = "always") 
+
+# create factor variable for analyses
+seer0to19$mcont66 <- factor(seer0to19$mcont66, levels = c(0:3), labels = c("Not enrolled", "Continuous", "Discontinuous", "Other"))
+```
+
+
+# check some variables
+```{r}
+table(seer0to19$can_type, seer0to19$SEERCombinedSummaryStage2000200, useNA = "always")
+
+table(seer0to19$ICCCsiterecode_ICD_O_3_WHO_2008, seer0to19$can_type,  useNA= "always")
+```
+
+# FIGURE 1
+```{r}
+Figure1<-grViz("digraph flowchart {
+      # node definitions with substituted label text
+      node [fontname = Helvetica, shape = rectangle, fontsize=16]        
+      tab1 [label = '@@1']
+      tab2 [label = '@@2']
+      tab3 [label = '@@3']
+      tab4 [label = '@@4']
+      tab5 [label = '@@5']
+      tab6 [label = '@@6']
+      tab7 [label = '@@7']
+      # edge definitions with the node IDs
+      tab1 -> tab2 -> tab3 -> tab4 -> tab5 -> tab6 -> tab7;
+      }
+      [1]: 'Records received for patients diagnosed with malignant cancers at ages 0 to 19 years from 2006-2013 n = 34,196'
+      [2]: 'Excluding 1800 individuals whose cancer was not their first malignant primary was n = 32,396' 
+      [3]: 'Excluding 16 individuals whose cancer sequence number was not in 0 or 1 n = 32,380'
+      [4]: 'Excluding 818 individuals linked to multiple state Medicaid files n = 31,562'
+      [5]: 'Excluding 152 individuals with Medicaid enrollment match scores <5 n = 31,410'
+      [6]: 'Excluding 163 individuals with missing data on cancer specific cause of death n = 31,247'
+      [7]: 'Excluding 593 individuals individuals with missing data on Yost ACS 2006 to 2010 Quintile n = 30,654'
+      ")
+Figure1
+```
+
+
+# TABLE 1
+```{r}
+# 0 to 19
+label(seer0to19$age_cat)<-"Age category"
+label(seer0to19$sex)<-"Sex"
+label(seer0to19$race_ethnicity)<-"Race/ethnicity category"
+label(seer0to19$fumo)<-"Follow-up months"
+label(seer0to19$can_type)<-"Cancer type"
+label(seer0to19$Yost_ACS_2006_2010_quintile) <- "Yost Index 2006 to 2010"
+label(seer0to19$stage) <- "Stage"
+label(seer0to19$mcont66) <- "Medicaid enrollment continuity"
+
+# make can_dead a factor variable just for this table
+seer0to19$can_dead2<-factor(seer0to19$can_dead, levels=c(0,1), labels= c("Alive", "Deceased"))
+table1(~as.factor(seer0to19$SEERcausespecificdeathclassific)|mcont66, seer0to19)
+
+label(seer0to19$can_dead2) <- "Cancer vital status"
+seer0to19$In_Medicaid_Flag<-factor(seer0to19$In_Medicaid_Flag, levels=c(0,1), labels= c("Not Enrolled", "Enrolled"))
+label(seer0to19$In_Medicaid_Flag) <- "Enrolled in Medicaid"
+
+table(seer0to19$can_dead2)
+table(seer0to19$In_Medicaid_Flag)
+
+table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19)
+
+
+table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19)
+
+```
+
+# TABLE 2: Stage analysis (unadjusted)
+```{r}
+# exclude leukemia cases from stage analysis and those with missing stage
+seer0to19_stage <- seer0to19 %>% 
+  filter(can_type != "I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases") # this also excludes those with missing cancer type to yield 22,386 
+
+# the mlogit.cluster function does not like labels
+seer0to19_stage <- seer0to19_stage %>% 
+  remove_labels()
+
+# exclude those with missing stage and redefine some variables so the function doesn't throw an error.
+seer0to19_stage <- seer0to19_stage %>%
+  filter(!is.na(stage)) %>% # this yields 21,502
+  select(stage, In_Medicaid_Flag, SEER_registry, mcont66, race_cat2, age_cat, Yost_ACS_2006_2010_quintile, state, can_type) %>%
+  mutate(stage2 = case_when(stage == "In situ/localized" ~ "0: In situ/localized",
+                            stage == "Regional" ~ "1: Regional",
+                            stage == "Distant" ~  "2: Distant")) 
+
+
+# function also likes it to only be a data.frame and nothing else
+seer0to19_stage <- as.data.frame(seer0to19_stage) 
+
+# In_Medicaid_Flag unadjusted model
+model1 <- multinom(stage2 ~ In_Medicaid_Flag, data=seer0to19_stage, trace = FALSE)
+model1
+summary(model1)
+
+# extract coefficients with non-clustered SEs from the model and exponentiate for comparison 
+exp(coef(model1))
+
+# CI(95%)
+exp(confint(model1, level=0.95))
+
+# get coefficients, variance, clustered standard errors, and p values
+b <- c(t(coef(model1)))
+var <- mlogit.clust(model1, seer0to19_stage, "state") # get variance with function
+se <- sqrt(diag(var))
+p <- (1-pnorm(abs(b/se))) * 2
+
+lowCI <- exp(b - 1.96*se)
+highCI <-exp(b + 1.96*se)
+df <- as.data.frame(exp(b))
+df2<-as.data.frame(lowCI)
+df3<-as.data.frame(highCI)
+df4 <- cbind(df, df2, df3) # this is the result dataset
+
+# relabel columns and dropt intercept rows
+names(df4)[1:3]<-c("OR", "lowCI", "highCI")
+df4
+
+df4<-df4[-c(1,3),]
+df4 <- tibble::rownames_to_column(df4, "Category") # Apply rownames_to_column
+
+# Replace multiple strings at a time
+rep_str = c('1: Regional:In_Medicaid_FlagEnrolled'='Regional','2: Distant:In_Medicaid_FlagEnrolled'='Distant')
+rep_str2 = c('1: Regional:In_Medicaid_FlagEnrolled'='Enrolled','2: Distant:In_Medicaid_FlagEnrolled'='Enrolled')
+df4$Stage<- str_replace_all(df4$Category, rep_str)
+df4$Category<- str_replace_all(df4$Category, rep_str2) # this is the dataframe for summary results
+
+# mcont66 model
+model2 <- multinom(stage2 ~ mcont66, data=seer0to19_stage)
+summary(model2)
+
+# extract coefficients from the model and exponentiate
+exp(coef(model2))
+
+# CI(95%)
+exp(confint(model2, level=0.95))
+
+b <- c(t(coef(model2)))
+var <- mlogit.clust(model2, seer0to19_stage, "state")
+se <- sqrt(diag(var))
+
+lowCI <- exp(b - 1.96*se)
+highCI <-exp(b + 1.96*se)
+
+df5 <- as.data.frame(exp(b))
+df6<-as.data.frame(lowCI)
+df7<-as.data.frame(highCI)
+df8 <- cbind(df5, df6, df7) # this is the result dataset
+# relabel columns and drop intercept rows
+
+names(df8)[1:3]<-c("OR", "lowCI", "highCI")
+df8
+
+df8<-df8[-c(1,5),]
+df8 <- tibble::rownames_to_column(df8, "Category") # Apply rownames_to_column
+df8  
+
+# Replace multiple strings at a time
+rep_str = c('1: Regional:mcont66Continuous'='Regional','1: Regional:mcont66Discontinuous'='Regional','1: Regional:mcont66Other'='Regional', '2: Distant:mcont66Continuous'='Distant','2: Distant:mcont66Discontinuous'='Distant','2: Distant:mcont66Other'='Distant')
+df8$Stage<- str_replace_all(df8$Category, rep_str)
+df8
+rep_str2 = c('1: Regional:mcont66Continuous'='Continuous','1: Regional:mcont66Discontinuous'='Discontinuous','1: Regional:mcont66Other'='Other', '2: Distant:mcont66Continuous'='Continuous','2: Distant:mcont66Discontinuous'='Discontinuous','2: Distant:mcont66Other'='Other')
+df8$Category<- str_replace_all(df8$Category, rep_str2)
+df8 # this is the dataframe for summary results
+```
+
+
+# Adjusted models
+```{r}
+model1a <- multinom(stage2 ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile , data=seer0to19_stage)
+summary(model1a)
+nrow(fitted(model1a)) # 21,507 is number of obs
+
+b <- c(t(coef(model1a)))
+var <- mlogit.clust(model1a, seer0to19_stage, "state")
+se <- sqrt(diag(var))
+
+lowCI <- exp(b - 1.96*se)
+highCI <-exp(b + 1.96*se)
+df9 <- as.data.frame(exp(b))
+df10<-as.data.frame(lowCI)
+df11<-as.data.frame(highCI)
+df12 <- cbind(df9, df10, df11) # this is the result dataset
+
+# relabel columns and drop intercept rows
+names(df12)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
+df12
+
+df12<-df12[-c(1,3:11, 13:20),]
+df12 <- tibble::rownames_to_column(df12, "Category") # Apply rownames_to_column
+df12  
+
+# Replace multiple strings at a time
+rep_str = c('1: Regional:In_Medicaid_FlagEnrolled'='Regional', '2: Distant:In_Medicaid_FlagEnrolled'='Distant')
+df12$Stage<- str_replace_all(df12$Category, rep_str)
+
+df12$Category<- "Enrolled"
+df12 # this is the dataframe for summary results
+
+# adjusted model
+model2a <- multinom(stage2 ~mcont66 + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, data=seer0to19_stage)
+summary(model2a)
+nrow(fitted(model2a))
+
+b <- c(t(coef(model2a)))
+var <- mlogit.clust(model2a, seer0to19_stage, "state")
+se <- sqrt(diag(var))
+
+lowCI <- exp(b - 1.96*se)
+highCI <-exp(b + 1.96*se)
+df13 <- as.data.frame(exp(b))
+df14<-as.data.frame(lowCI)
+df15<-as.data.frame(highCI)
+df16 <- cbind(df13, df14, df15) # this is the result dataset
+
+# relabel columns and drop intercept rows
+names(df16)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
+df16
+
+df16<-df16[-c(1,5:13, 17:24),]
+df16 <- tibble::rownames_to_column(df16, "Category") # Apply rownames_to_column
+df16  
+
+# Replace multiple strings at a time
+rep_str = c('1: Regional:mcont66Continuous'='Regional','1: Regional:mcont66Discontinuous'='Regional','1: Regional:mcont66Other'='Regional', '2: Distant:mcont66Continuous'='Distant','2: Distant:mcont66Discontinuous'='Distant','2: Distant:mcont66Other'='Distant')
+df16$Stage<- str_replace_all(df16$Category, rep_str)
+
+rep_str2 = c('1: Regional:mcont66Continuous'='Continuous','1: Regional:mcont66Discontinuous'='Discontinuous','1: Regional:mcont66Other'='Other', '2: Distant:mcont66Continuous'='Continuous','2: Distant:mcont66Discontinuous'='Discontinuous','2: Distant:mcont66Other'='Other')
+df16$Category<- str_replace_all(df16$Category, rep_str2)
+df16 # this is the dataframe for summary results
+```
+# Table 2 with clustered standard errors used for confidence interval calculation
+```{r}
+Table2 <- rbind(df12, df16)
+```
+# Relevel to determine if there is a difference between continuous and discontinuous
+```{r}
+seer0to19_stage <- seer0to19_stage%>%
+  mutate(mcont66.2 = case_when(mcont66 == "Continuous" ~ 0,
+                               mcont66 == "Discontinuous" ~ 1,
+                               mcont66 == "Other" ~ 2,
+                               mcont66 == "Not enrolled" ~ 3))
+seer0to19_stage$mcont66.2 <- factor(seer0to19_stage$mcont66.2, levels = c(0:3), labels = c("Continuous", "Discontinuous", "Other", "Not enrolled"))
+
+# adjusted model
+model2a <- multinom(stage2 ~ mcont66.2 + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, data=seer0to19_stage)
+summary(model2a)
+nrow(fitted(model2a))
+
+b <- c(t(coef(model2a)))
+var <- mlogit.clust(model2a, seer0to19_stage, "state")
+se <- sqrt(diag(var))
+
+lowCI <- exp(b - 1.96*se)
+highCI <-exp(b + 1.96*se)
+df17 <- as.data.frame(exp(b))
+df18<-as.data.frame(lowCI)
+df19<-as.data.frame(highCI)
+df20 <- cbind(df17, df18, df19) # this is the result dataset
+
+# relabel columns and drop intercept rows
+names(df20)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
+df20
+
+df20<-df20[-c(1,5:13, 17:24),]
+df20 <- tibble::rownames_to_column(df20, "Category") # Apply rownames_to_column
+df20  
+```
+
+# SUPPLEMENTARY TABLE 1a by cancer type with clustered standard errors for confidence interval calculation (In_Medicaid_Flag)
+```{r}
+limited <- seer0to19_stage %>%
+ filter(can_type %in% c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases","II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas", "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas"))
+
+ct <- unique(limited$can_type)
+
+# In_Medicaid_Flag
+df1a <- data.frame(matrix(ncol=6, nrow=0)) # create the table
+columns<-c("Category", "OR","cluster.lowCI", "cluster.highCI", "CancerType") # label the columns with names
+colnames(df1a)<-columns
+
+for (i in ct) {
+  dfa<- limited %>% 
+    filter(can_type == i)
+  x<-multinom(stage2 ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, data=dfa)
+
+
+b <- c(t(coef(x)))
+var <- mlogit.clust(x, dfa, "state")
+se <- sqrt(diag(var))
+
+lowCI <- exp(b - 1.96*se)
+highCI <-exp(b + 1.96*se)
+b <- as.data.frame(exp(b))
+lCI<-as.data.frame(lowCI)
+hCI<-as.data.frame(highCI)
+df2a <- cbind(b, lCI, hCI) # this is the result dataset
+# relabel columns and dropt intercept rows
+
+names(df2a)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
+df2a<-df2a[-c(1,3:11, 13:20),]
+df2a <- tibble::rownames_to_column(df2a, "Category") # Apply rownames_to_column
+df2a  
+df2a$CancerType<-i # add cancer type
+df1a <-rbind(df2a, df1a)
+}
+
+SuppTable1a<- df1a[order(df1a$CancerType),] # In_Medicaid_Flag
+
+# Mcont66
+df3a <- data.frame(matrix(ncol=6, nrow=0)) #create the table
+columns<-c("Category", "OR","cluster.lowCI", "cluster.highCI", "CancerType") #label the columns with names
+colnames(df3a)<-columns
+
+for (i in ct) {
+  dfa<- limited %>% 
+    filter(can_type == i)
+  x<-multinom(stage2 ~ mcont66 + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, data=dfa)
+
+
+b <- c(t(coef(x)))
+var <- mlogit.clust(x, dfa, "state")
+se <- sqrt(diag(var))
+
+lowCI <- exp(b - 1.96*se)
+highCI <-exp(b + 1.96*se)
+b <- as.data.frame(exp(b))
+lCI<-as.data.frame(lowCI)
+hCI<-as.data.frame(highCI)
+df4a <- cbind(b, lCI, hCI) # this is the result dataset
+# relabel columns and dropt intercept rows
+
+names(df4a)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
+df4a <-df4a[-c(1,5:13, 17:24),]
+df4a <- tibble::rownames_to_column(df4a, "Category") # Apply rownames_to_column
+df4a  
+df4a$CancerType<-i # add cancer type
+df3a <-rbind(df4a, df3a)
+}
+
+SuppTable1b<- df3a[order(df3a$CancerType),] # mcont66
+```
+
+# SUPPLEMENTAEY TABLE 1:
+```{r}
+SuppTable1 <- rbind(SuppTable1a, SuppTable1b)
+
+# Replace multiple strings at a time
+rep_str = c('1: Regional:mcont66Continuous'='Regional','1: Regional:mcont66Discontinuous'='Regional','1: Regional:mcont66Other'='Regional', '2: Distant:mcont66Continuous'='Distant','2: Distant:mcont66Discontinuous'='Distant','2: Distant:mcont66Other'='Distant', '1: Regional:In_Medicaid_FlagEnrolled'='Regional','2: Distant:In_Medicaid_FlagEnrolled'='Distant')
+SuppTable1$Stage<- str_replace_all(SuppTable1$Category, rep_str)
+
+rep_str2 = c('1: Regional:mcont66Continuous'='Continuous','1: Regional:mcont66Discontinuous'='Discontinuous','1: Regional:mcont66Other'='Other', '2: Distant:mcont66Continuous'='Continuous','2: Distant:mcont66Discontinuous'='Discontinuous','2: Distant:mcont66Other'='Other', '1: Regional:In_Medicaid_FlagEnrolled'='Enrolled','2: Distant:In_Medicaid_FlagEnrolled'='Enrolled')
+SuppTable1$Category<- str_replace_all(SuppTable1$Category, rep_str2)
+
+SuppTable1
+```
+
+# Add table 2 to SuppTable1 (with clustered SEs) to plot on one plot
+```{r}
+Table2$CancerType<-"Overall"
+
+SuppTable1 <- rbind(Table2, SuppTable1)
+```
+
+# FIGURE 2: Stage analysis by cancer type
+```{r}
+# graph ORs and 95% CIs
+SuppTable1a <- SuppTable1 %>%
+  filter(CancerType != "V. Retinoblastoma")
+
+SuppTable1a <- SuppTable1a %>%
+  mutate(Abbrev = case_when(CancerType == "Overall" ~ "Overall",
+                            CancerType =="II. Lymphomas and reticuloendothelial neoplasms" ~ "LYMPH",
+                            CancerType == "III. CNS and miscellaneous intracranial and intraspinal neoplasms" ~ "CNS",
+                            CancerType == "IV. Neuroblastoma and other peripheral nervous cell tumors" ~ "NB",
+                            CancerType == "V. Retinoblastoma" ~ "RB",
+                            CancerType == "VI. Renal tumors" ~ "RT",
+                            CancerType == "VII. Hepatic tumors" ~ "HT",
+                            CancerType == "VIII. Malignant bone tumors" ~ "MBT",
+                            CancerType == "IX. Soft tissue and other extraosseous sarcomas" ~ "STS", 
+                            CancerType == "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads" ~ "GCT",
+                            CancerType == "XI. Other malignant epithelial neoplasms and malignant melanomas" ~ "OTHEP",
+                            CancerType == "XII. Other and unspecified malignant neoplasms" ~ "OTHUN"))
+
+SuppTable1a$Abbrev <- factor(SuppTable1a$Abbrev, levels = c("Overall", "LYMPH", "CNS","NB", "RB",
+                                                  "RT", "HT", "MBT", "STS", "GCT",
+                                                  "OTHEP", "OTHUN"))
+
+SuppTable1a$Stage <- factor(SuppTable1a$Stage, levels = c("Regional", "Distant"))
+
+SuppTable1a$Abbrev<- fct_rev(SuppTable1a$Abbrev)
+
+Plot1 <- SuppTable1a %>%
+  filter(Category == "Enrolled", Stage == "Regional") %>%
+  ggplot() +
+  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=OR, x=Abbrev, group = Category, color = Category, ymax = cluster.highCI, ymin = cluster.lowCI), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL, title = "A", x = "Cancer type") +
+  ylim(0,2) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
+  scale_color_manual(breaks = c("Enrolled"), values=c("black")) 
+
+Plot1
+
+Plot2 <- SuppTable1a %>%
+  filter(Category == "Enrolled", Stage == "Distant") %>%
+  ggplot() +
+  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=OR, x=Abbrev, group = Category, color = Category, ymax = cluster.highCI, ymin = cluster.lowCI), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL, title = "B", x = "Cancer type") +
+  ylim(0,3.5) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
+  scale_color_manual(breaks = c("Enrolled"), values=c("black")) 
+
+Plot2
+
+```
+
+# FIGURE 2:  Stage analysis by cancer type mcont66
+```{r}
+# graph ORs and 95% CIs
+SuppTable1a$Category <- factor(SuppTable1a$Category, levels = c("Enrolled", "Discontinuous", "Other", "Continuous"))
+
+Plot3 <- SuppTable1a %>%
+  filter(Category != "Enrolled", Stage == "Regional") %>%
+  ggplot() +
+  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category), na.rm=TRUE, position=position_dodge(width=0.9)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  geom_vline(xintercept =c(1.5, 2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5), linetype=2, color = "lightgray") +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(position = position_dodge(width=0.9), aes(y=OR, x=Abbrev, group = Category, color = Category,  ymax = cluster.highCI, ymin = cluster.lowCI),  width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+ # facet_grid(cols = vars(y.level)) +
+  labs(color = NULL, title = "C", x = "Cancer type") +
+  ylim(0,4.0) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
+  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+                        values=c("red", "cyan3", "blue")) 
+
+Plot3
+
+
+Plot4 <- SuppTable1a %>%
+  filter(Category != "Enrolled", Stage == "Distant") %>%
+  ggplot() +
+  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category), na.rm=TRUE, position=position_dodge(width=0.9)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  geom_vline(xintercept =c(1.5, 2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5), linetype=2, color = "lightgray") +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(position = position_dodge(width=0.9), aes(y=OR, x=Abbrev, group = Category, color = Category,  max = cluster.highCI, ymin = cluster.lowCI),  width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+ # facet_grid(cols = vars(y.level)) +
+  labs(color = NULL, title = "D", x = "Cancer type") +
+  ylim(0,5.5) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
+  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+                        values=c("red", "cyan3", "blue")) 
+
+Plot4
+```
+
+```{r}
+pdf("Figure 2.pdf", width=8.5, height=11, paper="USr")
+Plot1 + Plot2 + Plot3 + Plot4 + plot_layout(ncol=2, nrow=2, guides='collect') &
+  theme(legend.position='bottom')
+
+dev.off()
+```
+
+
+# FIGURE 3 survival plots (# In_Medicaid_flag and mcont66) 
+```{r}
+# In_Medicaid_Flag
+plot1 <- ggsurvplot(fit = survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, data = seer0to19), 
+    xlab = "Months from diagnosis", 
+    ylab = "Survival probability", 
+    fun="pct",  
+    title = "A",
+    font.title = c(12, "bold"),
+    legend.title = "",
+    legend = "bottom",
+    font.legend=c(12, "bold"),
+    legend.labs = c("Not enrolled", "Enrolled"),
+    palette = c("red", "cyan3", "blue", "black"),
+    font.x = c(12, "bold"),
+    font.y = c(12, "bold"),
+    xlim=c(0, 60),
+    break.x.by = 12,
+    ylim=c(50, 100),
+    censor.size=0.5,
+    font.tickslab = c(12, "bold"),
+    pval=TRUE,
+    pval.size = 5,
+    pval.coord = c(2,55),
+    conf.int = TRUE) 
+
+plot1
+
+# mcont66
+ plot2 <- ggsurvplot(fit = survfit(Surv(fumo, can_dead) ~ mcont66, data = seer0to19), 
+    xlab = "Months from diagnosis", 
+    ylab = "Survival probability", 
+    fun="pct", 
+    title = "B",
+    font.title = c(12, "bold"),
+    legend.title = "",
+    legend = "bottom",
+    font.legend=c(12, "bold"),
+    legend.labs = c("Not enrolled", "Continuous", "Discontinuous", "Other"),
+    palette = c("red", "cyan3", "blue", "black", "gray"),
+    font.x = c(12, "bold"),
+    font.y = c(12, "bold"),
+    xlim=c(0, 60),
+    break.x.by = 12,
+    ylim=c(50, 100),
+    censor.size=0.5,
+    font.tickslab = c(12, "bold"),
+    pval=TRUE,
+    pval.size = 5,
+    pval.coord = c(2,55),
+    conf.int = TRUE)
+
+plot2
+pdf("Figure 3.pdf", width=8.5, height=11, paper="USr")
+plot1$plot + plot2$plot + plot_layout(ncol=1, nrow=2, guides='keep') &
+  theme(legend.position='bottom')
+
+dev.off()
+```
+# SUPPLEMENTARY TABLE 2: Estimate survival time 0 to 19
+```{r}
+# In_Medicaid_Flag
+SuppTable2a <- summary(survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, data = seer0to19), times = 60) # estimates 60 month survival time
+SuppTable2a <- as.data.frame(cbind(SuppTable2a$strata, round(SuppTable2a$surv*100, 2), round(SuppTable2a$lower*100, 2), round(SuppTable2a$upper*100,2))) # makes dataframe
+
+SuppTable2a <- setNames(SuppTable2a, c("Category", "Survival Percentage", "Lower CI", "Upper CI")) # gives column names
+SuppTable2a <- SuppTable2a %>%
+  mutate(Category = case_when(Category ==1 ~ "Not enrolled",
+                              Category ==2 ~ "Enrolled"))
+
+#mcont66
+SuppTable2b <- summary(survfit(Surv(fumo, can_dead) ~ mcont66, data = seer0to19), times = 60)
+SuppTable2b <- as.data.frame(cbind(SuppTable2b$strata, round(SuppTable2b$surv*100, 2), round(SuppTable2b$lower*100, 2), round(SuppTable2b$upper*100,2)))
+
+SuppTable2b <- setNames(SuppTable2b, c("Category", "Survival Percentage", "Lower CI", "Upper CI"))
+SuppTable2b <- SuppTable2b %>%
+  mutate(Category = case_when(Category ==1 ~ "Not enrolled",
+                              Category ==2 ~ "Continuous",
+                              Category == 3 ~ "Discontinuous",
+                              Category == 4 ~ "Other"))
+
+
+# Make Supplementary table 2
+SuppTable2 <- rbind(SuppTable2a, SuppTable2b)
+SuppTable2 <- unique(SuppTable2)
+```
+
+# SUPPLEMENTARY TABLE 3: Populate a table with survival by age group
+```{r}
+# In_Medicaid_Flag
+# calculate survival at 60 mo
+results <- data.frame(matrix(ncol=5, nrow=0)) #create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") #label the columns with names
+colnames(results)<-columns
+
+for (i in age) {
+  df<- seer0to19 %>% 
+    filter(age_cat == i)
+  x<-summary(survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, df), times=60)
+  results2 <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") #label the columns with names
+  colnames(results2)<-columns
+  results2[1:2,]<-c(x$strata, round(x$surv,3)*100, round(x$lower,3)*100 , round(x$upper,3)*100)
+  results2$Group<- i
+  results <-rbind(results, results2)
+}
+
+# sort by cancertype and add labels to Medicaid categories
+SuppTable3a<- results[order(results$Group),]
+SuppTable3a<- SuppTable3a %>%
+  rename(Category = Medicaid_Category) %>%
+  mutate(Category = case_when(Category == 1 ~ "Not enrolled",
+                              Category == 2 ~ "Enrolled"))
+
+# mcont66
+# calculate survival at 60 mo
+results <- data.frame(matrix(ncol=5, nrow=0)) #create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") #label the columns with names
+colnames(results)<-columns
+
+for (i in age) {
+  df<- seer0to19 %>% 
+    filter(age_cat == i)
+  x<-summary(survfit(Surv(fumo, can_dead) ~ mcont66, df), times=60)
+  results2 <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") #label the columns with names
+  colnames(results2)<-columns
+  results2[1:4,]<-c(x$strata, round(x$surv,3)*100, round(x$lower,3)*100 , round(x$upper,3)*100)
+  results2$Group<- i
+  results <-rbind(results, results2)
+}
+
+# sort by group and add labels to Medicaid categories
+SuppTable3b <- results[order(results$Group),]
+SuppTable3b <- SuppTable3b%>%
+  rename(Category = Medicaid_Category) %>%
+  mutate(Category = case_when(Category == 1 ~ "Not enrolled",
+                              Category == 2 ~ "Continuous",
+                              Category == 3 ~ "Discontinuous",
+                              Category == 4 ~ "Other"))
+
+SuppTable3a$Group <- factor(SuppTable3a$Group, levels = c("0-4", "5-9", "10-14", "15-19"))
+SuppTable3a <- SuppTable3a[order(SuppTable3a$Group),]
+
+SuppTable3b$Group <- factor(SuppTable3b$Group, levels = c("0-4", "5-9", "10-14", "15-19"))
+SuppTable3b <- SuppTable3b[order(SuppTable3b$Group),]
+
+SuppTable3 <-rbind(SuppTable3a, SuppTable3b)
+SuppTable3 <- unique(SuppTable3) # remove non-unique rows
+```
+
+
+# SUPPLEMENTARY TABLE 4: make a function to populate a table with survival by race
+```{r}
+race <- unique(seer0to19$race_ethnicity)
+limited <- seer0to19 %>%
+ filter(race_ethnicity %in% c("Non-Hispanic White","Non-Hispanic Black",  "Non-Hispanic API", "Hispanic", "Non-Hispanic Other"))
+
+# In_Medicaid_Flag
+# calculate survival at 60 mo
+results <- data.frame(matrix(ncol=5, nrow=0)) # create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Race_ethnicity") #label the columns with names
+colnames(results)<-columns
+
+for (i in race) {
+  df<- seer0to19 %>% 
+    filter(race_ethnicity == i)
+  x<-summary(survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, df), times=60)
+  results2 <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") # label the columns with names
+  colnames(results2)<-columns
+  results2[1:2,]<-c(x$strata, round(x$surv,3)*100, round(x$lower,3)*100 , round(x$upper,3)*100)
+  results2$Group<- i
+  results <-rbind(results, results2)
+}
+
+# sort by cancertype and add labels to Medicaid categories
+SuppTable4a <- results[order(results$Group),]
+SuppTable4a <- SuppTable4a %>%
+  rename(Category = Medicaid_Category) %>%
+  mutate(Category = case_when(Category == 1 ~ "Not enrolled",
+                              Category == 2 ~ "Enrolled"))
+
+# mcont66
+# calculate survival at 60 mo
+results <- data.frame(matrix(ncol=5, nrow=0)) #create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Race_ethnicity") #label the columns with names
+colnames(results)<-columns
+
+for (i in race) {
+  df<- limited %>% 
+    filter(race_ethnicity == i)
+  x<-summary(survfit(Surv(fumo, can_dead) ~ mcont66, df), times=60)
+  results2 <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") # label the columns with names
+  colnames(results2)<-columns
+  results2[1:4,]<-c(x$strata, round(x$surv,3)*100, round(x$lower,3)*100 , round(x$upper,3)*100)
+  results2$Group<- i
+  results <-rbind(results, results2)
+}
+
+
+# sort by group and add labels to Medicaid categories
+SuppTable4b <- results[order(results$Group),]
+SuppTable4b <- SuppTable4b %>%
+  rename(Category = Medicaid_Category) %>%
+  mutate(Category = case_when(Category == 1 ~ "Not enrolled",
+                              Category == 2 ~ "Continuous",
+                              Category == 3 ~ "Discontinuous",
+                              Category == 4 ~ "Other"))
+
+
+
+SuppTable4a$Group <- factor(SuppTable4a$Group, levels = c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic API", "Non-Hispanic Other", "Hispanic"))
+SuppTable4a <- SuppTable4a[order(SuppTable4a$Group),]
+
+SuppTable4b$Group <- factor(SuppTable4b$Group, levels = c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic API", "Non-Hispanic Other", "Hispanic"))
+SuppTable4b <- SuppTable4b[order(SuppTable4b$Group),]
+
+SuppTable4 <- rbind(SuppTable4a, SuppTable4b)
+SuppTable4 <- unique(SuppTable4)
+```
+
+
+# SUPPLEMENTARY TABLE 5: make a function to populate a table with survival by tumor type
+```{r}
+limited <- seer0to19 %>%
+ filter(can_type %in% c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases","II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas", "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas"))
+ct<-unique(limited$can_type)
+
+# In_Medicaid_Flag
+# calculate survival at 60 mo
+results <- data.frame(matrix(ncol=5, nrow=0)) # create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Cancer_type") #label the columns with names
+colnames(results)<-columns
+
+for (i in ct) {
+  df<- limited %>% 
+    filter(can_type == i)
+  x<-summary(survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, df), times=60)
+  results2 <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") # label the columns with names
+  colnames(results2)<-columns
+  results2[1:2,]<-c(x$strata, round(x$surv,3)*100, round(x$lower,3)*100 , round(x$upper,3)*100)
+  results2$Group<- i
+  results <-rbind(results, results2)
+}
+
+# sort by cancertype and add labels to Medicaid categories
+SuppTable5a <- results[order(results$Group),]
+SuppTable5a <- SuppTable5a %>%
+  rename(Category = Medicaid_Category) %>%
+  mutate(Category = case_when(Category == 1 ~ "Not enrolled",
+                              Category == 2 ~ "Enrolled"))
+
+# mcont66
+# calculate survival at 60 mo
+results <- data.frame(matrix(ncol=5, nrow=0)) # create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Cancer_type") # label the columns with names
+colnames(results)<-columns
+
+for (i in ct) {
+  df<- limited %>% 
+    filter(can_type == i)
+  x<-summary(survfit(Surv(fumo, can_dead) ~ mcont66, df), times=60)
+  results2 <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") #label the columns with names
+  colnames(results2)<-columns
+  results2[1:4,]<-c(x$strata, round(x$surv,3)*100, round(x$lower,3)*100 , round(x$upper,3)*100)
+  results2$Group<- i
+  results <-rbind(results, results2)
+}
+# sort by group and add labels to Medicaid categories
+SuppTable5b<- results[order(results$Group),]
+SuppTable5b<- SuppTable5b %>%
+  rename(Category = Medicaid_Category) %>%
+  mutate(Category = case_when(Category == 1 ~ "Not enrolled",
+                                       Category == 2 ~ "Continuous",
+                                       Category == 3 ~ "Discontinuous",
+                                       Category == 4 ~ "Other"))
+
+
+SuppTable5a$Group <- factor(SuppTable5a$Group, levels = c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases","II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas", "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas"))
+
+SuppTable5a <- SuppTable5a[order(SuppTable5a$Group),]
+
+SuppTable5b$Group <- factor(SuppTable5b$Group, levels = c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases","II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas", "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas"))
+SuppTable5b <- SuppTable5b[order(SuppTable5b$Group),]
+
+
+SuppTable5 <- rbind(SuppTable5a, SuppTable5b)
+SuppTable5 <- unique(SuppTable5)
+```
+
+
+# TABLE 3: Cox proportional hazards models (0 to 19) 
+```{r}
+# unadjusted model 0 TO 19
+res.cox1 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + cluster(state), data = seer0to19) # Univariable model
+res.cox1
+summary(res.cox1)
+
+# adjusted models 0 to 19
+res.cox2 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+res.cox2
+summary(res.cox2)
+
+# adjust for stage
+res.cox2a <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + stage + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty and stagee
+res.cox2a
+summary(res.cox2a)
+
+# mcont66 unadjusted model 0 TO 19
+res.cox3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + cluster(state), data = seer0to19) # Univariable model
+res.cox3
+summary(res.cox3)
+
+# mcont66 adjusted models 0 to 19
+res.cox4 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+res.cox4
+summary(res.cox4)
+
+# adjust for stage
+res.cox4b <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + stage + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+res.cox4b
+summary(res.cox4b)
+
+a<-as.data.frame(exp(cbind(HR = coef(res.cox1), confint(res.cox1))))
+   a<-a[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model="1. Unadjusted") %>%
+    mutate(age_group = "0 to 19 years") 
+   
+b<-as.data.frame(exp(cbind(HR = coef(res.cox2), confint(res.cox2))))
+   b<-b[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model="2. Adjusted for race/ethnicity, age, Yost SES indicator") %>%
+    mutate(age_group = "0 to 19 years")
+
+c<-as.data.frame(exp(cbind(HR = coef(res.cox3), confint(res.cox3))))
+   c<-c[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model="3. Unadjusted") %>%
+    mutate(age_group = "0 to 19 years")
+
+d<-as.data.frame(exp(cbind(HR = coef(res.cox4), confint(res.cox4))))
+   d<-d[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model="4. Adjusted for race/ethnicity, age, Yost SES indicator") %>%
+    mutate(age_group = "0 to 19 years")
+Table3 <- rbind(a,b,c,d)  
+```
+
+# run a model with continuous as reference
+```{r}
+seer0to19 <- seer0to19%>%
+  mutate(mcont66.2 = case_when(mcont66 == "Continuous" ~ 0,
+                               mcont66 == "Discontinuous" ~ 1,
+                               mcont66 == "Other" ~ 2,
+                               mcont66 == "Not enrolled" ~ 3))
+
+seer0to19$mcont66.2 <- factor(seer0to19$mcont66.2, levels = c(0:3), labels = c("Continuous", "Discontinuous", "Other", "Not enrolled"))
+
+
+
+
+# mcont66.2 adjusted models 0 to 19
+res.cox4.2 <- coxph(Surv(fumo, can_dead) ~ mcont66.2 + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+res.cox4.2
+summary(res.cox4.2)
+```
+
+# Test of the ph assumption for adjusted models
+```{r}
+# adjusted models 0 to 19
+Medflag <- cox.zph(res.cox2, terms = FALSE)
+Medflag
+
+# mcont66 adjusted models 0 to 19
+Med4cat <- cox.zph(res.cox4, terms = FALSE)
+Med4cat
+# violated for both
+
+plot(Medflag[1], resid =FALSE)
+abline(h=0, col=2)
+
+Medflag.surv <- survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # get survival probabilities
+
+plot(Medflag.surv[1], col=c("black", "red"), main="Medicaid_flag log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t))") #  ph assumption violated
+
+plot(Med4cat, resid = FALSE)
+
+ggcoxdiagnostics(res.cox2, type = "schoenfeld") 
+
+ggcoxdiagnostics(res.cox4, type = "schoenfeld")  
+```
+
+
+# Run models in 12 month increments
+```{r}
+# Split a survival data set at specified times to form a counting process format
+# For those with survival time of 0, add 0.5 mo because otherwise splitting doesn't work and it is more accurate
+
+seer0to19 <- seer0to19 %>%
+  mutate(fumo_half = if_else(fumo == 0, 0.5, fumo)) # need to add 0.5 or function doesn't work
+
+seer0to19$patient_id <- as.numeric(rownames(seer0to19))
+
+seer0to19.cp.format <- survSplit(data  = seer0to19,
+                            cut   = c(12, 24, 36),       # cut at time 12,24,36
+                            end   = "fumo_half",    # original survival time
+                            event = "can_dead",   # event indicator
+                            start = "start")    # will be created. zero by default
+
+# Recoding
+seer0to19.cp.format <- within(seer0to19.cp.format, {
+    # Create new survival object
+    SurvObj <- Surv(start, fumo_half, can_dead) 
+    # Create interval indicator
+    interval <- factor(start, levels = c(0,12, 24, 36), labels = c("First","Second", "Third", "Fourth"))
+})
+
+# Reordering
+seer0to19.cp.format <- seer0to19.cp.format[with(seer0to19.cp.format, order(patient_id, fumo_half)),]  # sort by patient_id and then by fumo
+summary(seer0to19$fumo_half)
+
+```
+
+# Run models based on intervals for Medicaid_flag
+```{r}
+# first interval
+seer0to19first<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="First"),]
+# adjusted models 0 to 19
+res.cox12 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19first) 
+res.cox12
+summary(res.cox12)
+
+# second interval
+seer0to19second<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Second"),]
+# adjusted models 0 to 19
+res.cox24 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19second) 
+res.cox24
+summary(res.cox24)
+
+# third interval
+seer0to19third<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Third"),]
+
+# adjusted models 0 to 19
+res.cox36 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19third) 
+res.cox36
+summary(res.cox36)
+
+# fourth interval
+seer0to19fourth<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Fourth"),]
+# adjusted models 0 to 19
+res.cox36plus <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19fourth) 
+res.cox36plus
+summary(res.cox36plus)
+
+# it seems the risk is highest later on in follow-up but this begs the question about which cancers are driving this?
+```
+
+# SUPPLEMENTARY TABLE 6a and Graph hazard ratios and confidence intervals across time for Medicaid_flag variable
+```{r}
+# need to get HRs in a dataframe
+a<-as.data.frame(exp(cbind(HR = coef(res.cox12), confint(res.cox12))))
+   a<-a[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model= 0) %>%
+     mutate(Group = "Overall")
+   
+b<-as.data.frame(exp(cbind(HR = coef(res.cox24), confint(res.cox24))))
+   b<-b[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model= 1) %>%
+     mutate(Group = "Overall")
+   
+c<-as.data.frame(exp(cbind(HR = coef(res.cox36), confint(res.cox36))))
+   c<-c[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model= 2) %>%
+     mutate(Group = "Overall")
+   
+d <-as.data.frame(exp(cbind(HR = coef(res.cox36plus), confint(res.cox36plus))))
+   d<-d[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model=3) %>%
+     mutate(Group = "Overall")
+
+SuppTable6a <- rbind(a,b,c,d)
+
+SuppTable6a$model <- factor(SuppTable6a$model, levels = c(0:3), labels = c("0 to 12 months", "12 to 24 months","24 to 36 months", ">36 months"))
+
+# graph HRs and 95% CIs
+SuppTable6a %>%
+  ggplot() +
+  geom_point(aes(y=HR, x=model)) + 
+  #scale_color_manual(values=c("black", "blue", "green", "red"), name="") + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=HR, x=model, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() 
+```
+
+# SUPPLEMENTARY TABLE 6b: Which cancer is driving this? 
+```{r}
+# Split a survival data set at specified times to form a counting process format
+# For those with survival time of 0, add 0.5 mo because otherwise splitting doesn't work and it is more accurate
+
+cantype <- function(cantype, int, time){
+
+df <- survSplit(data  = seer0to19 %>% 
+                  filter(can_type == cantype),
+                            cut   = c(12, 24, 36),       # cut at time 12,24,36
+                            end   = "fumo_half",    # original survival time
+                            event = "can_dead",   # event indicator
+                            start = "start")    # will be created. zero by default
+
+# Recoding
+df <- within(df, {
+    # Create new survival object
+    SurvObj <- Surv(start, fumo_half, can_dead) 
+    # Create interval indicator
+    interval <- factor(start, levels = c(0,12, 24, 36), labels = c("First","Second", "Third", "Fourth"))
+})
+
+# Reordering
+df <- df[with(df, order(patient_id, fumo_half)),]  # sort by patient_id and then by fumo
+
+# run models based on intervals for Medicaid_flag
+# first interval
+df<-df[which(df$interval==int),]
+mod<-coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = df) 
+summary(mod)
+
+# need to get HRs in a dataframe
+a<-as.data.frame(exp(cbind(HR = coef(mod), confint(mod))))
+  a<-a[c(1),] %>%
+   rownames_to_column() %>%
+    mutate(model= time,
+          Group = cantype) 
+}
+
+# Run top three cancer types
+a <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "First", 0)
+b <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "Second", 1)
+c <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "Third", 2)
+d <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "Fourth", 3)
+
+# Validate function for one cancer type
+test <- survSplit(data  = seer0to19 %>% 
+                  filter(can_type == "I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases"),
+                            cut   = c(12, 24, 36),       # cut at time 12,24,36
+                            end   = "fumo_half",    # original survival time
+                            event = "can_dead",   # event indicator
+                            start = "start")    # will be created. zero by default
+
+# Recoding
+test<- within(test, {
+    # Create new survival object
+    SurvObj <- Surv(start, fumo_half, can_dead) 
+    # Create interval indicator
+    interval <- factor(start, levels = c(0,12, 24, 36), labels = c("First","Second", "Third", "Fourth"))
+})
+
+# Reordering
+test <- test[with(test, order(patient_id, fumo_half)),]  # sort by patient_id and then by fumo
+
+# run models based on intervals for Medicaid_flag
+# first interval
+test <- test[which(test$interval=="First"),]
+mod<-coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = test) 
+summary(mod)
+
+# need to get HRs in a dataframe
+a.2<-as.data.frame(exp(cbind(HR = coef(mod), confint(mod))))
+  a.2<-a.2[c(1),] %>%
+   rownames_to_column() %>%
+    mutate(model= 0,
+          Group = "I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases")
+
+# Not presented
+# e <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "First", 0) # converg. issues
+# f <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "Second", 1) # converg. issues
+# g <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "Third", 2) # converg. issues
+# h <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "Fourth", 3)
+
+i <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "First", 0) 
+j <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "Second", 1)
+k <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "Third", 2) 
+l <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "Fourth", 3)
+
+SuppTable6b<-rbind(a,b,c,d,i,j,k,l)
+
+SuppTable6b$model <- factor(SuppTable6b$model, levels = c(0:3), labels = c("0 to 12 months", "12 to 24 months","24 to 36 months", ">36 months"))
+
+table(seer0to19$can_type)
+```
+
+# Group by cancer type and plot
+```{r}
+SuppTable6b %>%
+  group_by(Group) %>%
+  ggplot() +
+  geom_point(aes(y=HR, x=model)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=HR, x=model, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() + 
+  facet_wrap(~Group, nrow=4, ncol=2, scales = "free") +
+  labs( x = "Time interval") + 
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=12, face="bold"))
+```
+
+# run models based on intervals for mcont66
+```{r}
+# first interval
+res.cox12m3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19first) 
+summary(res.cox12m3)
+
+# second interval
+seer0to19second<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Second"),]
+# adjusted models 0 to 19
+res.cox24m3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19second) 
+summary(res.cox24m3)
+
+# third interval
+seer0to19third<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Third"),]
+# adjusted models 0 to 19
+res.cox36m3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19third) 
+summary(res.cox36m3)
+
+# fourth interval
+seer0to19fourth<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Fourth"),]
+# adjusted models 0 to 19
+res.cox36plusm3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
+                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19fourth) 
+summary(res.cox36plusm3)
+```
+
+# SUPPLEMETARY TABLE 6c: Graph hazard ratios and confidence intervals across time for mcont66 variable
+```{r}
+# need to get HRs in a dataframe
+a<-as.data.frame(exp(cbind(HR = coef(res.cox12m3), confint(res.cox12m3))))
+   a<-a[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model= 0) %>%
+    mutate(Group = "Overall")
+   
+b<-as.data.frame(exp(cbind(HR = coef(res.cox24m3), confint(res.cox24m3))))
+   b<-b[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model= 1)  %>%
+    mutate(Group ="Overall")
+   
+c<-as.data.frame(exp(cbind(HR = coef(res.cox36m3), confint(res.cox36m3))))
+   c<-c[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model= 2)  %>%
+    mutate(Group ="Overall")
+   
+d <-as.data.frame(exp(cbind(HR = coef(res.cox36plusm3), confint(res.cox36plusm3))))
+   d<-d[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model=3)  %>%
+    mutate(Group ="Overall")
+   
+SuppTable6c<- rbind(a,b,c,d)
+
+SuppTable6c$model <- factor(SuppTable6c$model, levels = c(0:3), labels = c("0 to 12 months", "12 to 24 months","24 to 36 months", ">36 months"))
+
+# graph HRs and 95% CIs
+SuppTable6c %>%
+  ggplot() +
+  geom_point(aes(y=HR, x=model)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=HR, x=model, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+ facet_wrap(~rowname, nrow=1, ncol=3) +
+  labs(title = "Category", x = "time") + 
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold"))
+```
+# SUPPLEMENTARY TABLE 6: HRs by time interval
+```{r}
+SuppTable6 <- rbind(SuppTable6a, SuppTable6b, SuppTable6c)
+```
+
+# Effect modification by sex
+```{r}
+emsex1 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + sex + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+summary(emsex1)
+
+emsex2 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + sex + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag*sex + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+summary(emsex2)
+
+lrtest(emsex1, emsex2) # not significant
+```
+
+# SUPPLEMENTARY TABLE 7a: Test effect modification by age
+```{r}
+# age_cat*Medicaid flag
+res.cox2em <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag*age_cat + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+summary(res.cox2em)
+
+lrtest(res.cox2em, res.cox2)
+
+# significant effect modification. Run models by age group.
+
+cox <-function(agegroup, var){
+  x<<-seer0to19 %>%
+    filter(age_cat == agegroup)
+    
+model<-coxph(Surv(fumo, can_dead) ~ var + race_ethnicity + Yost_ACS_2006_2010_quintile + cluster(state), data = x) # Model adjusted for race  and a measure of poverty
+
+a<-as.data.frame(exp(cbind(HR = coef(model), confint(model))))
+   a<-a[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model="Adjusted for race_ethnicty and Yost SES indicator") %>%
+    mutate(Group = agegroup) 
+}
+
+cox2 <-function(agegroup, var){
+  x<<-seer0to19 %>%
+    filter(age_cat == agegroup)
+    
+model<-coxph(Surv(fumo, can_dead) ~ var + race_ethnicity + Yost_ACS_2006_2010_quintile + cluster(state), data = x) # Model adjusted for race  and a measure of poverty
+
+
+a<-as.data.frame(exp(cbind(HR = coef(model), confint(model))))
+   a<-a[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model="Adjusted for race_ethnicty and Yost SES indicator") %>%
+    mutate(Group = agegroup) 
+}
+
+a<-cox("0-4", x$In_Medicaid_Flag)
+b<-cox("5-9", x$In_Medicaid_Flag)
+c<-cox("10-14", x$In_Medicaid_Flag)
+d<-cox("15-19", x$In_Medicaid_Flag)
+
+e<-cox2("0-4", x$mcont66)
+f<-cox2("5-9", x$mcont66)
+g<-cox2("10-14", x$mcont66)
+h<-cox2("15-19",  x$mcont66)
+
+SuppTable7a <- rbind(a,b,c,d,e,f,g,h)
+```
+
+# SUPPLEMENTARY TABLE 7b: Test effect modification by race
+```{r}
+# race_ethnicity*Medicaid flag
+res.cox2emr1 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and Yost SES indicator
+summary(res.cox2emr1)
+
+res.cox2emr <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag*race_ethnicity + cluster(state), data = seer0to19) # Model adjusted for race age and Yost SES indicator
+summary(res.cox2emr)
+
+lrtest(res.cox2emr, res.cox2emr1)
+
+
+# Significant effect modification. Run models by race_ethnicity.
+cox <-function(race_e, var){
+  x<<-seer0to19 %>%
+    filter(race_ethnicity == race_e)
+    
+model<-coxph(Surv(fumo, can_dead) ~ var  + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = x) # Model adjusted for race  and a Yost SES indicator
+
+a<-as.data.frame(exp(cbind(HR = coef(model), confint(model))))
+   a<-a[c(1),] %>%
+    rownames_to_column() %>%
+    mutate(model="Adjusted for age cqtegory and Yost SES indicator") %>%
+    mutate(Group = race_e) 
+   
+}
+
+cox2 <-function(race_e, var){
+  x<<-seer0to19 %>%
+    filter(race_ethnicity == race_e)
+    
+model<-coxph(Surv(fumo, can_dead) ~ var   + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = x) # Model adjusted for race  and a measure of poverty
+
+
+a<-as.data.frame(exp(cbind(HR = coef(model), confint(model))))
+   a<-a[c(1,2,3),] %>%
+    rownames_to_column() %>%
+    mutate(model="Adjusted for race_ethnicty and Yost SES indicator") %>%
+    mutate(Group = race_e) 
+}
+
+a<-cox("Non-Hispanic White", x$In_Medicaid_Flag) 
+b<-cox("Non-Hispanic Black",  x$In_Medicaid_Flag)
+c<-cox("Non-Hispanic API", x$In_Medicaid_Flag)
+d<-cox("Non-Hispanic Other",  x$In_Medicaid_Flag)
+e<-cox("Hispanic", x$In_Medicaid_Flag)
+
+f<-cox2("Non-Hispanic White",  x$mcont66)
+g<-cox2("Non-Hispanic Black",x$mcont66)
+h<-cox2("Non-Hispanic API", x$mcont66)
+i<-cox2("Non-Hispanic Other",  x$mcont66)
+j<-cox2("Hispanic", x$mcont66)
+
+SuppTable7b <- rbind(a,b,c,d,e,f,g,h,i,j)
+
+```
+
+
+# SUPPLEMENTARY TABLE 7c: Test effect modification by cancer type
+```{r}
+# can_type adjusted
+res.cox5 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + can_type + cluster(state), data = seer0to19) # Model adjusted for race age and Yost SES index
+summary(res.cox5)
+
+# can_type*Medicaid flag
+res.cox5em <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + can_type + In_Medicaid_Flag*can_type + cluster(state), data = seer0to19) # Model adjusted for race age and Yost SES index
+summary(res.cox5em)
+lrtest(res.cox5, res.cox5em)
+
+# Significant effect modification. Run models by cancer type.
+cox <-function(can_type_e, var){
+  x<<-seer0to19 %>%
+    filter(can_type == can_type_e)
+    
+model<-coxph(Surv(fumo, can_dead) ~ var  + age_cat + race_ethnicity + Yost_ACS_2006_2010_quintile + cluster(state), data = x) # Model adjusted for race, age category, and a measure of poverty
+
+a<-as.data.frame(exp(cbind(HR = coef(model), confint(model))))
+   a<-a[c(1),] %>%
+     rownames_to_column() %>%
+    mutate(model="Adjusted for age cqtegory, race, and Yost SES indicator") %>%
+    mutate(Group = can_type_e) 
+   
+}
+
+cox2 <-function(can_type_e, var){
+  x<<-seer0to19 %>%
+    filter(can_type == can_type_e)
+    
+model<-coxph(Surv(fumo, can_dead) ~ var + age_cat + race_ethnicity + Yost_ACS_2006_2010_quintile + cluster(state), data = x) # Model adjusted for race, age category, and Yost SES index
+
+
+a<-as.data.frame(exp(cbind(HR = coef(model), confint(model))))
+   a<-a[c(1,2,3),] %>%
+    rownames_to_column() %>%
+   mutate(model="Adjusted for age category, race_ethnicty, and Yost SES index") %>%
+    mutate(Group = can_type_e) 
+}
+
+a<-cox("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", x$In_Medicaid_Flag) 
+b<-cox("II. Lymphomas and reticuloendothelial neoplasms",  x$In_Medicaid_Flag)
+c<-cox("III. CNS and miscellaneous intracranial and intraspinal neoplasms", x$In_Medicaid_Flag)
+d<-cox("IV. Neuroblastoma and other peripheral nervous cell tumors", x$In_Medicaid_Flag)
+# e<-cox("V. Retinoblastoma", x$In_Medicaid_Flag) # convergence issues
+f<-cox("VI. Renal tumors",x$In_Medicaid_Flag)
+g<-cox("VII. Hepatic tumors", x$In_Medicaid_Flag) 
+h<-cox("VIII. Malignant bone tumors",  x$In_Medicaid_Flag)
+i<-cox("IX. Soft tissue and other extraosseous sarcomas",  x$In_Medicaid_Flag)
+j<-cox("X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads",  x$In_Medicaid_Flag)
+k<-cox("XI. Other malignant epithelial neoplasms and malignant melanomas", x$In_Medicaid_Flag)
+# l<-cox("XII. Other and unspecified malignant neoplasms", x$In_Medicaid_Flag) # convergence issues
+
+m<-cox2("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", x$mcont66)
+n<-cox2("II. Lymphomas and reticuloendothelial neoplasms", x$mcont66) 
+o<-cox2("III. CNS and miscellaneous intracranial and intraspinal neoplasms", x$mcont66)
+p<-cox2("IV. Neuroblastoma and other peripheral nervous cell tumors", x$mcont66)
+# q<-cox2("V. Retinoblastoma", x$mcont66)# convergence issues
+r<-cox2("VI. Renal tumors", x$mcont66)
+s<-cox2("VII. Hepatic tumors", x$mcont66)
+t<-cox2("VIII. Malignant bone tumors", x$mcont66)
+u<-cox2("IX. Soft tissue and other extraosseous sarcomas", x$mcont66)
+v<-cox2("X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", x$mcont66)
+w<-cox2("XI. Other malignant epithelial neoplasms and malignant melanomas", x$mcont66)
+# y<-cox2("XII. Other and unspecified malignant neoplasms", x$mcont66) # convergence issues
+
+SuppTable7c <- rbind(a,b,c,d,f,h,i,j,k, m,n,o,p,r,s,t,u,v,w)
+```
+
+# SUPPLEMENTARY TABLE 7: Effect modifcation table
+```{r}
+# combine age, race/ethnicity, and cancer type specific results
+SuppTable7<- rbind(SuppTable7a, SuppTable7b, SuppTable7c)
+table(SuppTable7$rowname)
+
+SuppTable7 <- SuppTable7 %>%
+  rename(Category = rowname) %>%
+  mutate(Category = case_when(Category == "varContinuous" ~ "Continuous",
+            Category == "varDiscontinuous" ~ "Discontinuous",
+            Category == "varOther" ~ "Other",
+            Category == "varEnrolled" ~ "Enrolled")) %>%
+  mutate(Group2 = case_when(Group %in% c("0-4", "5-9", "10-14", "15-19") ~ "Age",
+                            Group %in% c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas",  "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas", "XII. Other and unspecified malignant neoplasms") ~ "CancerType",
+                            Group %in% c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic API", "Non-Hispanic Other", "Hispanic") ~ "Race"))
+
+# need abbreviations for plot fitting
+
+SuppTable7 <- SuppTable7 %>%
+  mutate(Abbrev = case_when(Group == "I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases" ~ "LEUK",
+                            Group =="II. Lymphomas and reticuloendothelial neoplasms" ~ "LYMPH",
+                            Group == "III. CNS and miscellaneous intracranial and intraspinal neoplasms" ~ "CNS",
+                            Group == "IV. Neuroblastoma and other peripheral nervous cell tumors" ~ "NB",
+                            Group == "V. Retinoblastoma" ~ "RB",
+                            Group == "VI. Renal tumors" ~ "RT",
+                            Group == "VII. Hepatic tumors" ~ "HT",
+                            Group == "VIII. Malignant bone tumors" ~ "MBT",
+                            Group == "IX. Soft tissue and other extraosseous sarcomas" ~ "STS", 
+                            Group == "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads" ~ "GCT",
+                            Group == "XI. Other malignant epithelial neoplasms and malignant melanomas" ~ "OTHEP",
+                            Group == "XII. Other and unspecified malignant neoplasms" ~ "OTHUN",
+                            Group == "Non-Hispanic White" ~ "NHW",
+                            Group == "Non-Hispanic Black" ~ "NHB",
+                            Group == "Non-Hispanic API" ~ "NHAPI",
+                            Group == "Non-Hispanic Other"~ "NHOTH",
+                            Group == "Hispanic" ~ "HISP",
+                            Group == "0-4" ~ "0 to 4",
+                            Group == "5-9" ~ "5 to 9",
+                            Group == "10-14" ~ "10 to 14",
+                            Group == "15-19" ~ "15 to 19"))
+
+
+SuppTable7$Abbrev <- factor(SuppTable7$Abbrev, levels = c("LEUK", "LYMPH", "CNS","NB", "RB",
+                                                  "RT", "HT", "MBT", "STS", "GCT",
+                                                  "OTHEP", "OTHUN", "NHW", "NHB",  "NHAPI",
+                                                  "NHOTH", "HISP", "0 to 4", "5 to 9", "10 to 14", "15 to 19"))
+SuppTable7$Abbrev <- fct_rev(SuppTable7$Abbrev)
+```
+
+# Supplementary FIGURE 1: Effect modification by age, race, cancer type
+- Medicaid enrollment variable
+```{r}
+plot1 <- SuppTable7 %>%
+  filter(Category == "Enrolled", Group2 == "Age") %>%
+ggplot() +
+  geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL, title = " ", x = "") +
+  ylim(0.5,3) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + 
+          ggtitle("A") + theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Enrolled"), values=c("black")) +
+  theme(legend.title=element_blank())
+plot1 
+
+plot2 <-SuppTable7 %>%
+  filter(Category == "Enrolled", Group2 == "Race") %>% 
+  ggplot() +
+  geom_point(aes(y=HR, x = Abbrev, group = Category, color = Category)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL, title = " ", x = "") +
+  ylim(0.5,5) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("C") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Enrolled"),
+                        values=c("black")) +
+  theme(legend.title=element_blank())
+
+
+plot2
+
+
+plot3 <-SuppTable7 %>%
+  filter(Category == "Enrolled", Group2 == "CancerType", Abbrev != "OTHUN") %>%
+  ggplot() +
+  geom_point(aes(y=HR, x = Abbrev, group = Category, color = Category)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL, title = " ", x = "") +
+  ylim(0.5,3.6) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("E") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Enrolled"),
+                        values=c("black")) +
+  theme(legend.title=element_blank())
+
+
+plot3
+```
+# Supplementary FIGURE 1: Effect modification by age, race, cancer type
+- mcont66
+```{r}
+SuppTable7$Category <- factor(SuppTable7$Category, levels = c("Enrolled", "Discontinuous", "Other",  "Continuous"))
+
+plot4 <- SuppTable7 %>%
+  filter(Category != "Enrolled", Group2 == "Age") %>%
+ggplot() +
+  geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category), na.rm=TRUE, position=position_dodge(width = 0.9)) + 
+  geom_hline(yintercept =1, linetype=2) +
+   geom_vline(xintercept = c(1.5, 2.5,3.5), linetype=2, color = "lightgray") +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(position=position_dodge(width = 0.9), aes(y=HR, x=Abbrev, group=Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL, title = " ", x = "") +
+  ylim(0.5,3) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("B") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+                        values=c("red", "cyan3", "blue")) +
+  theme(legend.title=element_blank())
+ 
+plot4
+
+plot5 <-SuppTable7 %>%
+  filter(Category != "Enrolled", Group2 == "Race") %>% 
+  ggplot() +
+  geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category), na.rm=TRUE, position=position_dodge(width = 0.9)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  geom_vline(xintercept =c(1.5, 2.5,3.5, 4.5), linetype=2, color = "lightgray") +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(position=position_dodge(width = 0.9), aes(y=HR, x=Abbrev, group=Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL,title = " ", x = "") +
+  ylim(0.5,7) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("D") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+                        values=c("red", "cyan3", "blue")) +
+  theme(legend.title=element_blank())
+
+plot5
+
+
+plot6 <-SuppTable7 %>%
+  filter(Category != "Enrolled", Group2 == "CancerType", !Abbrev %in% c("RB", "OTHUN")) %>%
+  ggplot() +
+  geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category), na.rm=TRUE, position=position_dodge(width = 0.9)) + 
+  geom_hline(yintercept =1, linetype=2) +
+  geom_vline(xintercept =c(1.5, 2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5), linetype=2, color = "lightgray") +
+  theme(axis.text.y=element_blank()) +
+  geom_errorbar(position=position_dodge(width = 0.9), aes(y=HR, x=Abbrev, group=Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  theme_bw() +
+  theme(axis.line = element_line(colour = "black"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    axis.text.x=element_text(size=11, face = "bold", color = "black"),
+    axis.text.y=element_text(size=11, face = "bold", color = "black"),
+    axis.title.x=element_text(size=12, face = "bold", color = "black"),
+    axis.title.y=element_text(size=12, face = "bold", color = "black"))+
+  coord_flip() +
+  labs(color = NULL, title = " ", x = "") +
+  ylim(0.5,4.5) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("F") +theme(plot.title = element_text(face="bold"))+
+  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+                        values=c("red", "cyan3", "blue"))+
+  theme(legend.title=element_blank())
+
+
+plot6
+```
+# Supplementary FIGURE 1: Export
+```{r}
+pdf("Supplementary Figure 1.pdf", width=12, height=10, paper="USr")
+plot1 + plot2 + plot3 + plot4 + plot5 + plot6 + plot_layout(ncol=3, nrow=2, guides='collect') &
+  theme(legend.position='bottom')
+
+dev.off()
+```
+
+# Clean up tables
+```{r}
+Table2 <- Table2%>%
+  rename(`lower 95% CI` = cluster.lowCI,
+         `upper 95% CI` = cluster.highCI) %>%
+  mutate_if(is.numeric, round, 2)
+
+Table2$`OR (95% CI)` <-paste0(Table2$OR, " (", Table2$`lower 95% CI`, " to ", Table2$`upper 95% CI`, ")") 
+
+Table3 <- Table3 %>% 
+  rename(Category = rowname,
+         "lower 95% CI" = "2.5 %",
+         "upper 95% CI" = "97.5 %") %>%
+  mutate(Category = case_when(Category == "In_Medicaid_FlagEnrolled" ~ "Enrolled",
+            Category == "mcont66Discontinuous" ~ "Discontinuous",
+            Category == "mcont66Other" ~ "Other",
+            Category == "mcont66Continuous" ~ "Continuous"))  %>%
+  mutate_if(is.numeric, round, 2)
+  
+Table3$`HR (95% CI)` <-paste0(Table3$HR, " (", Table3$`lower 95% CI`, " to ", Table3$`upper 95% CI`, ")") 
+```
+
+# Supplementary Tables
+```{r}
+# 1
+SuppTable1 <- SuppTable1 %>%
+  rename(`lower 95% CI` = cluster.lowCI,
+         `upper 95% CI` = cluster.highCI,
+          `Cancer Type` = CancerType) %>%
+  mutate_if(is.numeric, round, 2)
+
+SuppTable1$`OR (95% CI)` <-paste0(SuppTable1$OR, " (", SuppTable1$`lower 95% CI`, " to ", SuppTable1$`upper 95% CI`, ")") 
+SuppTable1 <- SuppTable1 %>%
+  dplyr::select(1,5,6,7)
+
+# 2
+SuppTable2 <- SuppTable2 %>%
+  rename(`lower 95% CI` = `Lower CI`,
+         `upper 95% CI` = `Upper CI`)
+
+SuppTable2$`Survival Percentage (95% CI)` <-paste0(SuppTable2$`Survival Percentage`, " (", SuppTable2$`lower 95% CI`, " to ", SuppTable2$`upper 95% CI`, ")")
+# drop uneeded columns
+SuppTable2 <- SuppTable2 %>%
+  dplyr::select(1,5)
+
+# 3
+SuppTable3 <- SuppTable3 %>%
+  rename(`lower 95% CI` = LowerCI,
+         `upper 95% CI` = UpperCI)
+
+SuppTable3$`Survival Percentage (95% CI)` <-paste0(SuppTable3$`Survival Percentage`, " (", SuppTable3$`lower 95% CI`, " to ", SuppTable3$`upper 95% CI`, ")")
+SuppTable3 <- SuppTable3 %>%
+  dplyr::select(1,5,6)
+
+# 4
+SuppTable4 <- SuppTable4 %>%
+  rename(`lower 95% CI` = LowerCI,
+         `upper 95% CI` = UpperCI)
+
+SuppTable4$`Survival Percentage (95% CI)` <-paste0(SuppTable4$`Survival Percentage`, " (", SuppTable4$`lower 95% CI`, " to ", SuppTable4$`upper 95% CI`, ")")
+SuppTable4 <- SuppTable4 %>%
+  dplyr::select(1,5,6)
+
+# 5
+SuppTable5 <- SuppTable5 %>%
+  rename(`lower 95% CI` = LowerCI,
+         `upper 95% CI` = UpperCI)
+
+SuppTable5$`Survival Percentage (95% CI)` <-paste0(SuppTable5$`Survival Percentage`, " (", SuppTable5$`lower 95% CI`, " to ", SuppTable5$`upper 95% CI`, ")")
+
+SuppTable5 <- SuppTable5 %>%
+  dplyr::select(1,5,6)
+
+# 6
+SuppTable6 <- SuppTable6 %>%
+  rename(`Time interval` = model,
+         Category = rowname,
+         `lower 95% CI` = `2.5 %`,
+         `upper 95% CI` = `97.5 %`) %>%
+  mutate(Category = case_when(Category == "In_Medicaid_FlagEnrolled" ~ "Enrolled",
+            Category == "mcont66Discontinuous" ~ "Discontinuous",
+            Category == "mcont66Other" ~ "Other",
+            Category == "mcont66Continuous" ~ "Continuous")) %>%
+  
+  mutate_if(is.numeric, round, 2)
+
+SuppTable6$`HR (95% CI)` <-paste0(SuppTable6$HR, " (", SuppTable6$`lower 95% CI`, " to ", SuppTable6$`upper 95% CI`, ")") 
+SuppTable6 <- SuppTable6 %>%
+  dplyr::select(1,5,6,7)
+
+# 7
+SuppTable7 <- SuppTable7 %>%
+  rename(`lower 95% CI` = `2.5 %`,
+         `upper 95% CI` = `97.5 %`) %>%
+  dplyr::select(-7, -8)  %>%
+  mutate_if(is.numeric, round, 2)
+
+SuppTable7$`HR (95% CI)` <-paste0(SuppTable7$HR, " (", SuppTable7$`lower 95% CI`, " to ", SuppTable7$`upper 95% CI`, ")") 
+SuppTable7 <- SuppTable7 %>%
+  dplyr::select(1,6,7)
+```
+
+# Export data to excel (Tables 2-3)
+```{r}
+sheets<-list("Table 2 (unadj stagedx enro)" = df4,
+             "Table 2 (unadj stagedx mcont66)" = df8,
+             "Table 2 (stage dx analysis)" = Table2,
+             "Table 3 (overall CPH)" = Table3)
+write.xlsx(sheets, file="SEER0to19analysis_tables.xlsx", keepNA=TRUE, overwrite=TRUE)
+```
+
+# Export supplementary tables to excel
+```{r}
+sheets <- list("Supp Table 1 (stage cantype)" = SuppTable1,
+               "Supp Table 2 (surv overall)" = SuppTable2,
+               "Supp Table 3 (surv prob age )" = SuppTable3,
+               "Supp Table 4 (surv prob race )" = SuppTable4,
+               "Supp Table 5 (surv prob can )" = SuppTable5,
+               "Supp Table 6 (ph analysis)" = SuppTable6, 
+               "Supp Table 7 (EM)" = SuppTable7)
+write.xlsx(sheets, file="Supplementary tables.xlsx", showNA=TRUE, overwrite = TRUE)
+```
+
+
+# SOME Sensitivity analyses
+# This code validates the function above for clustered SEs using binomial logistic (nnet object is hard to work with for any standard functions that calculate robust or clustered SEs) 
+```{r}
+# regional vs. in situ/localized
+model1_logit<-glm(stage ~ In_Medicaid_Flag, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Regional")),], family = binomial(link = "logit"))
+odds.n.ends(model1_logit) # these are CIs without robust SEs
+
+# distant vs. in situ/localized
+model1_logit2<-glm(stage ~ In_Medicaid_Flag, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], family = binomial(link = "logit"))
+odds.n.ends(model1_logit2)  # these are CIs without robust SEs
+
+model1_logit3 <-glm(stage ~ mcont66, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], family = binomial(link = "logit"))
+odds.n.ends(model1_logit3)  # these are CIs without robust SEs
+
+model1_logit4 <-glm(stage ~ mcont66, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], family = binomial(link = "logit"))
+odds.n.ends(model1_logit4)  # these are CIs without robust SEs
+```
+
+# get results with clustered standard errors (solution 5  here: https://stackoverflow.com/questions/16498849/logistic-regression-with-robust-clustered-standard-errors-in-r)
+```{r}
+model1_logit_RSE <- miceadds::glm.cluster(data=seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Regional")),], formula= stage ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, cluster="state", family="binomial")
+summary(model1_logit_RSE)
+exp(0.156116634)
+exp(0.156116634 + (1.96*0.02744999)) 
+exp(0.156116634 - (1.96*0.02744999)) 
+
+
+model2_logit_RSE <- miceadds::glm.cluster(data=seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], formula= stage ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, cluster="state", family="binomial")
+summary(model2_logit_RSE)
+
+exp(0.354153776)
+exp(0.354153776 + (1.96*0.02011365)) 
+exp(0.354153776 - (1.96*0.02011365)) 
+
+# The results are the same.
+```
+
+
