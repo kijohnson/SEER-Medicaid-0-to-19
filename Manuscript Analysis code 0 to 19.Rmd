@@ -34,6 +34,7 @@ mlogit.clust <- function(model,data,variable) {
   return(cl.vcov = cl.vcov)
 }
 ```
+
 # Import files sent by SEER Medicaid (IMS), get data into right columns, and assign column names
 ```{r, eval =FALSE}
 # # Medicaid enrollment--imports fixed width columns and gives them names
@@ -722,6 +723,7 @@ df16 # this is the dataframe for summary results
 ```{r}
 Table2 <- rbind(df12, df16)
 ```
+
 # Relevel to determine if there is a difference between continuous and discontinuous
 ```{r}
 seer0to19_stage <- seer0to19_stage%>%
@@ -739,6 +741,9 @@ nrow(fitted(model2a))
 b <- c(t(coef(model2a)))
 var <- mlogit.clust(model2a, seer0to19_stage, "state")
 se <- sqrt(diag(var))
+z <- b/se
+p <- (1 - pnorm(abs(z), 0, 1))*2 # two-tailed z test, reported in manuscript
+p
 
 lowCI <- exp(b - 1.96*se)
 highCI <-exp(b + 1.96*se)
@@ -1204,7 +1209,6 @@ for (i in race) {
   results <-rbind(results, results2)
 }
 
-
 # sort by group and add labels to Medicaid categories
 SuppTable4b <- results[order(results$Group),]
 SuppTable4b <- SuppTable4b %>%
@@ -1365,9 +1369,6 @@ seer0to19 <- seer0to19%>%
                                mcont66 == "Not enrolled" ~ 3))
 
 seer0to19$mcont66.2 <- factor(seer0to19$mcont66.2, levels = c(0:3), labels = c("Continuous", "Discontinuous", "Other", "Not enrolled"))
-
-
-
 
 # mcont66.2 adjusted models 0 to 19
 res.cox4.2 <- coxph(Surv(fumo, can_dead) ~ mcont66.2 + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
