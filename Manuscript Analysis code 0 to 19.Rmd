@@ -392,8 +392,9 @@ seer0to39$stage <- factor(seer0to39$stage, levels = c(0:2), labels = c("In situ/
 
 table(seer0to39$stage, useNA ="always")
 
-#
 table(seer0to39$SEER_DateofDeath_Year, useNA = "always")
+
+table(seer0to39$can_type)
 
 ```
 
@@ -551,9 +552,10 @@ table(seer0to19$In_Medicaid_Flag)
 
 table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19)
 
+table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19 %>% filter(Agerecodewithsingleages_and_100 !=18 ))
 
-table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19)
 
+table1(~mcont66|age_cat, droplevels = TRUE, seer0to19%>% filter(Agerecodewithsingleages_and_100 <18 ))
 ```
 
 # TABLE 2: Stage analysis (unadjusted)
@@ -1032,12 +1034,14 @@ plot1 <- ggsurvplot(fit = survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, data 
     pval=TRUE,
     pval.size = 5,
     pval.coord = c(2,55),
-    conf.int = TRUE) 
+    conf.int = TRUE,
+    hline = 90) 
 
+# plot1$plot + geom_hline(yintercept = 90)
 plot1
 
 # mcont66
- plot2 <- ggsurvplot(fit = survfit(Surv(fumo, can_dead) ~ mcont66, data = seer0to19), 
+ plot2 <- ggsurvplot(fit = survfit(Surv(fumo, can_dead) ~ mcont66, data = seer0to19 ), 
     xlab = "Months from diagnosis", 
     ylab = "Survival probability", 
     fun="pct", 
@@ -1067,22 +1071,26 @@ plot1$plot + plot2$plot + plot_layout(ncol=1, nrow=2, guides='keep') &
 
 dev.off()
 ```
-# SUPPLEMENTARY TABLE 2: Estimate survival time 0 to 19
+# SUPPLEMENTARY TABLE 2: Estimate survival time 0 to 19 at 160 mo
 ```{r}
-# In_Medicaid_Flag
-SuppTable2a <- summary(survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, data = seer0to19), times = 60) # estimates 60 month survival time
-SuppTable2a <- as.data.frame(cbind(SuppTable2a$strata, round(SuppTable2a$surv*100, 2), round(SuppTable2a$lower*100, 2), round(SuppTable2a$upper*100,2))) # makes dataframe
+# Overall
+summary(survfit(Surv(fumo, can_dead) ~ 1, data = seer0to19), times=60) # estimates 60 month survival time
 
-SuppTable2a <- setNames(SuppTable2a, c("Category", "Survival Percentage", "Lower CI", "Upper CI")) # gives column names
+# In_Medicaid_Flag
+SuppTable2a <- summary(survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, data = seer0to19), times=60) # estimates 60 month survival time
+
+SuppTable2a <- as.data.frame(cbind(SuppTable2a$strata, SuppTable2a$time, round(SuppTable2a$surv*100, 2), round(SuppTable2a$lower*100, 2), round(SuppTable2a$upper*100,2))) # makes dataframe
+
+SuppTable2a <- setNames(SuppTable2a, c("Category", "Time (months)", "Survival Percentage", "Lower CI", "Upper CI")) # gives column names
 SuppTable2a <- SuppTable2a %>%
   mutate(Category = case_when(Category ==1 ~ "Not enrolled",
                               Category ==2 ~ "Enrolled"))
 
 #mcont66
 SuppTable2b <- summary(survfit(Surv(fumo, can_dead) ~ mcont66, data = seer0to19), times = 60)
-SuppTable2b <- as.data.frame(cbind(SuppTable2b$strata, round(SuppTable2b$surv*100, 2), round(SuppTable2b$lower*100, 2), round(SuppTable2b$upper*100,2)))
+SuppTable2b <- as.data.frame(cbind(SuppTable2b$strata, SuppTable2b$time, round(SuppTable2b$surv*100, 2), round(SuppTable2b$lower*100, 2), round(SuppTable2b$upper*100,2)))
 
-SuppTable2b <- setNames(SuppTable2b, c("Category", "Survival Percentage", "Lower CI", "Upper CI"))
+SuppTable2b <- setNames(SuppTable2b, c("Category", "Time (months)", "Survival Percentage", "Lower CI", "Upper CI"))
 SuppTable2b <- SuppTable2b %>%
   mutate(Category = case_when(Category ==1 ~ "Not enrolled",
                               Category ==2 ~ "Continuous",
@@ -1095,12 +1103,12 @@ SuppTable2 <- rbind(SuppTable2a, SuppTable2b)
 SuppTable2 <- unique(SuppTable2)
 ```
 
-# SUPPLEMENTARY TABLE 3: Populate a table with survival by age group
+# SUPPLEMENTARY TABLE 3: Populate a table with survival by age group at 60 mo
 ```{r}
+age <- unique(seer0to19$age_cat)
 # In_Medicaid_Flag
-# calculate survival at 60 mo
-results <- data.frame(matrix(ncol=5, nrow=0)) #create the table
-columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") #label the columns with names
+results <- data.frame(matrix(ncol=6, nrow=0)) #create the table
+columns<-c("Medicaid_Category", "Time (months)", "Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") # label the columns with names
 colnames(results)<-columns
 
 for (i in age) {
@@ -1124,8 +1132,8 @@ SuppTable3a<- SuppTable3a %>%
 
 # mcont66
 # calculate survival at 60 mo
-results <- data.frame(matrix(ncol=5, nrow=0)) #create the table
-columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") #label the columns with names
+results <- data.frame(matrix(ncol=6, nrow=0)) #create the table
+columns<-c("Medicaid_Category", "Time (months)","Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") #label the columns with names
 colnames(results)<-columns
 
 for (i in age) {
@@ -1160,7 +1168,7 @@ SuppTable3 <- unique(SuppTable3) # remove non-unique rows
 ```
 
 
-# SUPPLEMENTARY TABLE 4: make a function to populate a table with survival by race
+# SUPPLEMENTARY TABLE 4: Populate a table with survival by race at 60 mo
 ```{r}
 race <- unique(seer0to19$race_ethnicity)
 limited <- seer0to19 %>%
@@ -1231,7 +1239,7 @@ SuppTable4 <- unique(SuppTable4)
 ```
 
 
-# SUPPLEMENTARY TABLE 5: make a function to populate a table with survival by tumor type
+# SUPPLEMENTARY TABLE 5: Populate a table with survival by tumor type at 12, 24, 36, 48, and 60 mo
 ```{r}
 limited <- seer0to19 %>%
  filter(can_type %in% c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases","II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas", "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas"))
@@ -1315,7 +1323,7 @@ res.cox2
 summary(res.cox2)
 
 # adjust for stage
-res.cox2a <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + stage + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty and stagee
+res.cox2a <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + stage + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty and stage
 res.cox2a
 summary(res.cox2a)
 
