@@ -398,6 +398,67 @@ table(seer0to39$can_type)
 
 ```
 
+# test code
+```{r}
+
+# create categories for AYA codes
+class(seer0to39$AYA_site_recode_WHO_2008) # numeric
+
+seer0to39 <- seer0to39 %>%
+  mutate(can_typeAYA = case_when(AYA_site_recode_WHO_2008 %in% c(1,2,3,4) ~ 0,
+                                 AYA_site_recode_WHO_2008 %in% c(5,6) ~ 1,
+                                 AYA_site_recode_WHO_2008 %in% c(7,8,9,10,11,12,13,14,15,16) ~ 2,
+                                 AYA_site_recode_WHO_2008 %in% c(17,18,19,20) ~ 3,
+                                 AYA_site_recode_WHO_2008 %in% c(21,22,23,24,25) ~ 4,
+                                 AYA_site_recode_WHO_2008 %in% c(26,27,28) ~ 5,
+                                 AYA_site_recode_WHO_2008 %in% c(29,30) ~ 6,
+                                 AYA_site_recode_WHO_2008 %in% c(31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48) ~ 7,
+                                 AYA_site_recode_WHO_2008 %in% c(49,50,51,52,53,54,55) ~ 8,
+                                 AYA_site_recode_WHO_2008 %in% c(55,56) ~ 9,
+                                 AYA_site_recode_WHO_2008 == 99 ~ 10))
+                                 
+seer0to39$can_typeAYA <- factor(seer0to39$can_typeAYA, levels = c(0:10), labels = c(
+  "1. Leukemias",
+  "2. Lymphomas",
+  "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)",
+  "4. Osseous & Chondromatous Neoplasms",
+  "5. Soft Tissue Sarcomas",
+  "6. Germ Cell and Trophoblastic Neoplasms",
+  "7. Melanoma and Skin Carcinomas",
+  "8. Carcinomas",
+  "9. Miscellaneous specified neoplasms, NOS",
+  "10. Unspecified Malignant Neoplasms",
+  "Unclassified"))
+table(seer0to39$can_typeAYA, useNA = "always")
+
+
+# categorize brain tumors according to AYA definition
+
+seer0to39 <- seer0to39 %>%
+  mutate(brain = case_when (can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)"  & AYA_site_recode_WHO_2008 %in% c(7,8,9) ~ 0, # 3.1 Astrocytoma
+                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(10) ~ 1, # 3.2 Other glioma
+                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(11) ~ 2, # 3.3 Ependymoma
+                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(12,13) ~ 3, # 3.4 Medulloblastoma and other PNET
+                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(14) ~ 4, # 3.5 Other specified intracranial and instraspinal neoplasms
+                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(15,16) ~ 5)) # 3.6 Unspecified intracranial and intraspinal neoplasms
+seer0to39$brain
+table(seer0to39$brain, useNA = "always")
+
+seer0to39$brain <- factor(seer0to39$brain, levels = c(0:5), labels = c(
+  "3.1 Astrocytoma",
+  "3.2 Other glioma",
+  "3.3 Ependymoma",
+  "3.4 Medulloblastoma and other PNET",
+  "3.5 Other specified intracranial and instraspinal neoplasms",
+  "3.6 Unspecified intracranial and intraspinal neoplasms"))
+table(seer0to39$brain, useNA = "always")
+
+df <- seer0to39 %>%
+  filter(can_type == "III. CNS and miscellaneous intracranial and intraspinal neoplasms"|can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)") %>%
+  group_by(can_type, can_typeAYA)%>%
+  tally()
+```
+
 # Exclusions
 
 # make separate dataframe for 0 to 19 
@@ -1005,7 +1066,6 @@ Plot4
 pdf("Figure 2.pdf", width=8.5, height=11, paper="USr")
 Plot1 + Plot2 + Plot3 + Plot4 + plot_layout(ncol=2, nrow=2, guides='collect') &
   theme(legend.position='bottom')
-
 dev.off()
 ```
 
@@ -1071,7 +1131,7 @@ plot1$plot + plot2$plot + plot_layout(ncol=1, nrow=2, guides='keep') &
 
 dev.off()
 ```
-# SUPPLEMENTARY TABLE 2: Estimate survival time 0 to 19 at 160 mo
+# SUPPLEMENTARY TABLE 2: Estimate survival time 0 to 19 at 60 mo
 ```{r}
 # Overall
 summary(survfit(Surv(fumo, can_dead) ~ 1, data = seer0to19), times=60) # estimates 60 month survival time
@@ -1106,9 +1166,10 @@ SuppTable2 <- unique(SuppTable2)
 # SUPPLEMENTARY TABLE 3: Populate a table with survival by age group at 60 mo
 ```{r}
 age <- unique(seer0to19$age_cat)
+
 # In_Medicaid_Flag
-results <- data.frame(matrix(ncol=6, nrow=0)) #create the table
-columns<-c("Medicaid_Category", "Time (months)", "Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") # label the columns with names
+results <- data.frame(matrix(ncol=4, nrow=0)) #create the table
+columns<-c("Medicaid Category", "Survival Percentage",  "LowerCI", "UpperCI") # label the columns with names
 colnames(results)<-columns
 
 for (i in age) {
@@ -1132,8 +1193,8 @@ SuppTable3a<- SuppTable3a %>%
 
 # mcont66
 # calculate survival at 60 mo
-results <- data.frame(matrix(ncol=6, nrow=0)) #create the table
-columns<-c("Medicaid_Category", "Time (months)","Survival Percentage",  "LowerCI", "UpperCI", "Age_cat") #label the columns with names
+results <- data.frame(matrix(ncol=4, nrow=0)) #create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") # label the columns with names
 colnames(results)<-columns
 
 for (i in age) {
@@ -1141,7 +1202,7 @@ for (i in age) {
     filter(age_cat == i)
   x<-summary(survfit(Surv(fumo, can_dead) ~ mcont66, df), times=60)
   results2 <- data.frame(matrix(ncol=4, nrow=0)) # create the table
-  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") #label the columns with names
+  columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") # label the columns with names
   colnames(results2)<-columns
   results2[1:4,]<-c(x$strata, round(x$surv,3)*100, round(x$lower,3)*100 , round(x$upper,3)*100)
   results2$Group<- i
@@ -1176,8 +1237,8 @@ limited <- seer0to19 %>%
 
 # In_Medicaid_Flag
 # calculate survival at 60 mo
-results <- data.frame(matrix(ncol=5, nrow=0)) # create the table
-columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Race_ethnicity") #label the columns with names
+results <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") #label the columns with names
 colnames(results)<-columns
 
 for (i in race) {
@@ -1202,7 +1263,7 @@ SuppTable4a <- SuppTable4a %>%
 # mcont66
 # calculate survival at 60 mo
 results <- data.frame(matrix(ncol=5, nrow=0)) #create the table
-columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Race_ethnicity") #label the columns with names
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") #label the columns with names
 colnames(results)<-columns
 
 for (i in race) {
@@ -1247,8 +1308,8 @@ ct<-unique(limited$can_type)
 
 # In_Medicaid_Flag
 # calculate survival at 60 mo
-results <- data.frame(matrix(ncol=5, nrow=0)) # create the table
-columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Cancer_type") #label the columns with names
+results <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") #label the columns with names
 colnames(results)<-columns
 
 for (i in ct) {
@@ -1272,8 +1333,8 @@ SuppTable5a <- SuppTable5a %>%
 
 # mcont66
 # calculate survival at 60 mo
-results <- data.frame(matrix(ncol=5, nrow=0)) # create the table
-columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI", "Cancer_type") # label the columns with names
+results <- data.frame(matrix(ncol=4, nrow=0)) # create the table
+columns<-c("Medicaid_Category", "Survival Percentage",  "LowerCI", "UpperCI") # label the columns with names
 colnames(results)<-columns
 
 for (i in ct) {
@@ -1303,7 +1364,6 @@ SuppTable5a <- SuppTable5a[order(SuppTable5a$Group),]
 
 SuppTable5b$Group <- factor(SuppTable5b$Group, levels = c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases","II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas", "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas"))
 SuppTable5b <- SuppTable5b[order(SuppTable5b$Group),]
-
 
 SuppTable5 <- rbind(SuppTable5a, SuppTable5b)
 SuppTable5 <- unique(SuppTable5)
@@ -1923,6 +1983,7 @@ w<-cox2("XI. Other malignant epithelial neoplasms and malignant melanomas", x$mc
 # y<-cox2("XII. Other and unspecified malignant neoplasms", x$mcont66) # convergence issues
 
 SuppTable7c <- rbind(a,b,c,d,f,h,i,j,k, m,n,o,p,r,s,t,u,v,w)
+
 ```
 
 # SUPPLEMENTARY TABLE 7: Effect modifcation table
