@@ -1500,83 +1500,68 @@ summary(seer0to19$fumo_half)
 
 ```
 
-# Run models based on intervals for Medicaid_flag
+# Supplementary Table 6a: Run models based on intervals for Medicaid_flag
 ```{r}
-# first interval
-seer0to19first<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="First"),]
-# adjusted models 0 to 19
-res.cox12 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19first) 
-res.cox12
-summary(res.cox12)
+age <- unique(seer0to19.cp.format$age_cat)
 
-# second interval
-seer0to19second<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Second"),]
-# adjusted models 0 to 19
-res.cox24 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19second) 
-res.cox24
-summary(res.cox24)
+# testing here
+m <-coxph(SurvObj ~ In_Medicaid_Flag + In_Medicaid_Flag*strata(interval) + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), seer0to19.cp.format)
 
-# third interval
-seer0to19third<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Third"),]
+m
+library(multcomp)
+X<- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1)
 
-# adjusted models 0 to 19
-res.cox36 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19third) 
-res.cox36
-summary(res.cox36)
+t <- glht(m, linfct = X) 
+summary(t) # here are the results
 
-# fourth interval
-seer0to19fourth<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Fourth"),]
-# adjusted models 0 to 19
-res.cox36plus <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19fourth) 
-res.cox36plus
-summary(res.cox36plus)
+CI <- confint(t)
+CI <- as.data.frame(exp(CI$confint))
+# end testing
+
+W <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) 
+X <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,1,0,0), 1)
+Y <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,1,0), 1)
+Z <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,1), 1)
+
+x <- coxph(SurvObj ~ In_Medicaid_Flag + In_Medicaid_Flag*strata(interval) + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19.cp.format) 
+  t0<- glht(x, linfct = W) 
+  df1<-confint(t0)
+  df1 <- as.data.frame(exp(df1$confint))
+  
+  df1$interval = "0-<12" # enrolled first interval
+  
+  t12<- glht(x, linfct = X) 
+  df2<-confint(t12)
+  df2 <- as.data.frame(exp(df2$confint))
+  df2$interval = "12-<24" # enrolled second interval
+  
+  t24<- glht(x, linfct = Y) 
+  df3<-confint(t24)
+  df3 <- as.data.frame(exp(df3$confint))
+  df3$interval = "24-<36" # enrolled third interval
+  
+  t36 <- glht(x, linfct = Z) 
+  df4 <-confint(t36)
+  df4 <- as.data.frame(exp(df4$confint))
+  df4$interval = "36+" # enrolled fourth interval
+  
+  results <-rbind(df1, df2, df3, df4)  # this puts the results from each loop round in the results data file
+
+  results$Group <- "Overall"
+  results$category <- "Enrolled"
+SuppTable6a <- results
 
 # it seems the risk is highest later on in follow-up but this begs the question about which cancers are driving this?
 ```
 
-# SUPPLEMENTARY TABLE 6a and Graph hazard ratios and confidence intervals across time for Medicaid_flag variable
+# Graph hazard ratios and confidence intervals across time for enrolled variable
 ```{r}
-# need to get HRs in a dataframe
-a<-as.data.frame(exp(cbind(HR = coef(res.cox12), confint(res.cox12))))
-   a<-a[c(1),] %>%
-    rownames_to_column() %>%
-    mutate(model= 0) %>%
-     mutate(Group = "Overall")
-   
-b<-as.data.frame(exp(cbind(HR = coef(res.cox24), confint(res.cox24))))
-   b<-b[c(1),] %>%
-    rownames_to_column() %>%
-    mutate(model= 1) %>%
-     mutate(Group = "Overall")
-   
-c<-as.data.frame(exp(cbind(HR = coef(res.cox36), confint(res.cox36))))
-   c<-c[c(1),] %>%
-    rownames_to_column() %>%
-    mutate(model= 2) %>%
-     mutate(Group = "Overall")
-   
-d <-as.data.frame(exp(cbind(HR = coef(res.cox36plus), confint(res.cox36plus))))
-   d<-d[c(1),] %>%
-    rownames_to_column() %>%
-    mutate(model=3) %>%
-     mutate(Group = "Overall")
-
-SuppTable6a <- rbind(a,b,c,d)
-
-SuppTable6a$model <- factor(SuppTable6a$model, levels = c(0:3), labels = c("0 to 12 months", "12 to 24 months","24 to 36 months", ">36 months"))
-
-# graph HRs and 95% CIs
-SuppTable6a %>%
+p<- results %>%
   ggplot() +
-  geom_point(aes(y=HR, x=model)) + 
-  #scale_color_manual(values=c("black", "blue", "green", "red"), name="") + 
+  geom_point(aes(y=Estimate, x= interval), na.rm=TRUE, position=position_dodge(width=0.9), size =4) + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=HR, x=model, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  geom_errorbar(aes(y=Estimate, x=interval, ymax = lwr, ymin = upr), na.rm=TRUE, position=position_dodge(width=0.9), width = 0.1) +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -1588,112 +1573,64 @@ SuppTable6a %>%
     axis.title.x=element_text(size=12, face = "bold", color = "black"),
     axis.title.y=element_text(size=12, face = "bold", color = "black"))+
   coord_flip() 
+p
 ```
-
 # SUPPLEMENTARY TABLE 6b: Which cancer is driving this? 
 ```{r}
-# Split a survival data set at specified times to form a counting process format
-# For those with survival time of 0, add 0.5 mo because otherwise splitting doesn't work and it is more accurate
+# In_Medicaid_Flag
+results <- data.frame(matrix(ncol=5, nrow=0)) # create empty table for results that will be populated by for loop
+columns<-c("estimate", "lwr", "upr", "age", "interval") # label the columns with names
+colnames(results) <- columns
 
-cantype <- function(cantype, int, time){
+cantype <- c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "III. CNS and miscellaneous intracranial and intraspinal neoplasms")
+colnames(seer0to19.cp.format)
 
-df <- survSplit(data  = seer0to19 %>% 
-                  filter(can_type == cantype),
-                            cut   = c(12, 24, 36),       # cut at time 12,24,36
-                            end   = "fumo_half",    # original survival time
-                            event = "can_dead",   # event indicator
-                            start = "start")    # will be created. zero by default
-
-# Recoding
-df <- within(df, {
-    # Create new survival object
-    SurvObj <- Surv(start, fumo_half, can_dead) 
-    # Create interval indicator
-    interval <- factor(start, levels = c(0,12, 24, 36), labels = c("First","Second", "Third", "Fourth"))
-})
-
-# Reordering
-df <- df[with(df, order(patient_id, fumo_half)),]  # sort by patient_id and then by fumo
-
-# run models based on intervals for Medicaid_flag
-# first interval
-df<-df[which(df$interval==int),]
-mod<-coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = df) 
-summary(mod)
-
-# need to get HRs in a dataframe
-a<-as.data.frame(exp(cbind(HR = coef(mod), confint(mod))))
-  a<-a[c(1),] %>%
-   rownames_to_column() %>%
-    mutate(model= time,
-          Group = cantype) 
+for (i in cantype) {
+  df <- seer0to19.cp.format %>% filter(can_type == i)
+  
+  x <- coxph(SurvObj ~ In_Medicaid_Flag + In_Medicaid_Flag*strata(interval) + age_cat + race_ethnicity + Yost_ACS_2006_2010_quintile + cluster(state), data = df) 
+  t0<- glht(x, linfct = W) 
+  df1<-confint(t0)
+  df1 <- as.data.frame(exp(df1$confint))
+  df1$Group <- i
+  df1$interval = "0-<12" # enrolled first interval
+  
+  t12<- glht(x, linfct = X) 
+  df2<-confint(t12)
+  df2 <- as.data.frame(exp(df2$confint))
+  df2$Group <- i
+  df2$interval = "12-<24" # enrolled second interval
+  
+  t24<- glht(x, linfct = Y) 
+  df3<-confint(t24)
+  df3 <- as.data.frame(exp(df3$confint))
+  df3$Group <- i
+  df3$interval = "24-<36" # enrolled third interval
+  
+  t36 <- glht(x, linfct = Z) 
+  df4 <-confint(t36)
+  df4 <- as.data.frame(exp(df4$confint))
+  df4$Group <- i
+  df4$interval = "36+" # enrolled fourth interval
+  
+  results <-rbind(results, df1, df2, df3, df4)  # this puts the results from each loop round in the results data file
 }
 
-# Run top three cancer types
-a <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "First", 0)
-b <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "Second", 1)
-c <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "Third", 2)
-d <-cantype("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "Fourth", 3)
-
-# Validate function for one cancer type
-test <- survSplit(data  = seer0to19 %>% 
-                  filter(can_type == "I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases"),
-                            cut   = c(12, 24, 36),       # cut at time 12,24,36
-                            end   = "fumo_half",    # original survival time
-                            event = "can_dead",   # event indicator
-                            start = "start")    # will be created. zero by default
-
-# Recoding
-test<- within(test, {
-    # Create new survival object
-    SurvObj <- Surv(start, fumo_half, can_dead) 
-    # Create interval indicator
-    interval <- factor(start, levels = c(0,12, 24, 36), labels = c("First","Second", "Third", "Fourth"))
-})
-
-# Reordering
-test <- test[with(test, order(patient_id, fumo_half)),]  # sort by patient_id and then by fumo
-
-# run models based on intervals for Medicaid_flag
-# first interval
-test <- test[which(test$interval=="First"),]
-mod<-coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = test) 
-summary(mod)
-
-# need to get HRs in a dataframe
-a.2<-as.data.frame(exp(cbind(HR = coef(mod), confint(mod))))
-  a.2<-a.2[c(1),] %>%
-   rownames_to_column() %>%
-    mutate(model= 0,
-          Group = "I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases")
-
-# Not presented
-# e <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "First", 0) # converg. issues
-# f <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "Second", 1) # converg. issues
-# g <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "Third", 2) # converg. issues
-# h <-cantype("II. Lymphomas and reticuloendothelial neoplasms", "Fourth", 3)
-
-i <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "First", 0) 
-j <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "Second", 1)
-k <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "Third", 2) 
-l <-cantype("III. CNS and miscellaneous intracranial and intraspinal neoplasms", "Fourth", 3)
-
-SuppTable6b<-rbind(a,b,c,d,i,j,k,l)
-
-SuppTable6b$model <- factor(SuppTable6b$model, levels = c(0:3), labels = c("0 to 12 months", "12 to 24 months","24 to 36 months", ">36 months"))
-
-table(seer0to19$can_type)
+results$category = "Enrolled"
+SuppTable6b <- results
 ```
+ 
+
 
 # Group by cancer type and plot
 ```{r}
 SuppTable6b %>%
   group_by(Group) %>%
   ggplot() +
-  geom_point(aes(y=HR, x=model)) + 
+  geom_point(aes(y=Estimate, x=interval)) + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=HR, x=model, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  geom_errorbar(aes(y=Estimate, x=interval, ymax = lwr, ymin = upr), width = 0.1) +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -1709,74 +1646,138 @@ SuppTable6b %>%
   labs( x = "Time interval") + 
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=12, face="bold"))
 ```
-
 # run models based on intervals for mcont66
 ```{r}
-# first interval
-res.cox12m3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19first) 
-summary(res.cox12m3)
+# testing here
+m <-coxph(SurvObj ~ mcont66 + mcont66*strata(interval) + age_cat + race_ethnicity +  Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19.cp.format) 
+m
 
-# second interval
-seer0to19second<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Second"),]
-# adjusted models 0 to 19
-res.cox24m3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19second) 
-summary(res.cox24m3)
+X <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1)
 
-# third interval
-seer0to19third<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Third"),]
-# adjusted models 0 to 19
-res.cox36m3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19third) 
-summary(res.cox36m3)
+t <- glht(m, linfct = X) 
+summary(t) # here are the results
 
-# fourth interval
-seer0to19fourth<-seer0to19.cp.format[which(seer0to19.cp.format$interval=="Fourth"),]
-# adjusted models 0 to 19
-res.cox36plusm3 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + 
-                     Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19fourth) 
-summary(res.cox36plusm3)
+CI<-confint(t)
+CI <- as.data.frame(exp(CI$confint))
+# end testing
+
+
+A <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # discontinuous 1st interval
+B <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # other 1st interval
+C <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # Not enrolled 1st interval
+
+D <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0), 1) # discontinuous 2nd interval
+E <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0), 1) # other 2nd interval
+F <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0), 1) # Not enrolled 2nd interval
+
+G <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0), 1) # discontinuous 3rd interval
+H <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0), 1) # other 3rd interval
+I <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0), 1) # Not enrolled 3rd interval
+
+J <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0), 1) # discontinuous 3rd interval
+K <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0), 1) # other 3rd interval
+L <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1), 1) # Not enrolled 3rd interval
+
+  x <- coxph(SurvObj ~ mcont66 + mcont66*strata(interval) + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19.cp.format) 
+  t0<- glht(x, linfct = A) 
+  df1<-confint(t0)
+  df1 <- as.data.frame(exp(df1$confint))
+  df1$Group <- "Overall"
+  df1$interval = "0-<12"
+  df1$category ="continuous" # first interval
+  
+  t0<- glht(x, linfct = B) 
+  df2<-confint(t0)
+  df2 <- as.data.frame(exp(df2$confint))
+  df2$Group <- "Overall"
+  df2$interval = "0-<12"
+  df2$category ="discontinuous" # first interval
+  
+  t0<- glht(x, linfct = C) 
+  df3<-confint(t0)
+  df3 <- as.data.frame(exp(df3$confint))
+  df3$Group <- "Overall"
+  df3$interval = "0-<12"
+  df3$category ="other" # first interval
+  
+  t12<- glht(x, linfct = D) 
+  df4<-confint(t12)
+  df4 <- as.data.frame(exp(df4$confint))
+  df4$Group <- "Overall"
+  df4$interval = "12-<24"
+  df4$category ="continuous" # second interval
+  
+  t12<- glht(x, linfct = E) 
+  df5<-confint(t12)
+  df5 <- as.data.frame(exp(df5$confint))
+  df5$Group <- "Overall"
+  df5$interval = "12-<24"
+  df5$category ="discontinuous" # second interval
+  
+  t12<- glht(x, linfct = F) 
+  df6<-confint(t12)
+  df6 <- as.data.frame(exp(df6$confint))
+  df6$Group <- "Overall"
+  df6$interval = "12-<24"
+  df6$category ="other" # second interval
+  
+  t24<- glht(x, linfct = G) 
+  df7<-confint(t24)
+  df7 <- as.data.frame(exp(df7$confint))
+  df7$Group <- "Overall"
+  df7$interval = "24-<36"
+  df7$category ="continuous" # third interval
+  
+  t24<- glht(x, linfct = H) 
+  df8<-confint(t24)
+  df8<- as.data.frame(exp(df8$confint))
+  df8$Group <- "Overall"
+  df8$interval = "24-<36"
+  df8$category ="discontinuous" # third interval
+  
+  t24<- glht(x, linfct = I) 
+  df9<-confint(t24)
+  df9 <- as.data.frame(exp(df9$confint))
+  df9$Group <- "Overall"
+  df9$interval = "24-<36"
+  df9$category ="other" # third interval
+  
+  t36<- glht(x, linfct = J) 
+  df10<-confint(t36)
+  df10 <- as.data.frame(exp(df10$confint))
+  df10$Group <- "Overall"
+  df10$interval = "36+"
+  df10$category ="continuous" # fourth interval
+  
+  t36<- glht(x, linfct = K) 
+  df11<-confint(t36)
+  df11<- as.data.frame(exp(df11$confint))
+  df11$Group <- "Overall"
+  df11$interval = "36+"
+  df11$category ="discontinuous" # fourth interval
+  
+  t36<- glht(x, linfct = L) 
+  df12<-confint(t36)
+  df12 <- as.data.frame(exp(df12$confint))
+  df12$Group <- "Overall"
+  df12$interval = "36+"
+  df12$category ="other" # fourth interval
+  
+  results <-rbind(df1, df2, df3, df4, df5, df6, df7, df8, df9, df10, df11, df12)  # this puts the results from each loop round in the results data file
+
+SuppTable6c <- results
 ```
 
 # SUPPLEMETARY TABLE 6c: Graph hazard ratios and confidence intervals across time for mcont66 variable
 ```{r}
-# need to get HRs in a dataframe
-a<-as.data.frame(exp(cbind(HR = coef(res.cox12m3), confint(res.cox12m3))))
-   a<-a[c(1,2,3),] %>%
-    rownames_to_column() %>%
-    mutate(model= 0) %>%
-    mutate(Group = "Overall")
-   
-b<-as.data.frame(exp(cbind(HR = coef(res.cox24m3), confint(res.cox24m3))))
-   b<-b[c(1,2,3),] %>%
-    rownames_to_column() %>%
-    mutate(model= 1)  %>%
-    mutate(Group ="Overall")
-   
-c<-as.data.frame(exp(cbind(HR = coef(res.cox36m3), confint(res.cox36m3))))
-   c<-c[c(1,2,3),] %>%
-    rownames_to_column() %>%
-    mutate(model= 2)  %>%
-    mutate(Group ="Overall")
-   
-d <-as.data.frame(exp(cbind(HR = coef(res.cox36plusm3), confint(res.cox36plusm3))))
-   d<-d[c(1,2,3),] %>%
-    rownames_to_column() %>%
-    mutate(model=3)  %>%
-    mutate(Group ="Overall")
-   
-SuppTable6c<- rbind(a,b,c,d)
-
-SuppTable6c$model <- factor(SuppTable6c$model, levels = c(0:3), labels = c("0 to 12 months", "12 to 24 months","24 to 36 months", ">36 months"))
-
 # graph HRs and 95% CIs
 SuppTable6c %>%
   ggplot() +
-  geom_point(aes(y=HR, x=model)) + 
+  geom_point(aes(y=Estimate, x=interval, group = category, color = category),  position=position_dodge(width=0.9)) + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=HR, x=model, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  geom_errorbar(aes(y=Estimate, x=interval, ymax = lwr, ymin = upr,  group = category, color = category), position=position_dodge(width=0.9), width = 0.1) +
+  geom_vline(xintercept =c(1.5, 2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5), linetype=2, color = "lightgray") +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -1788,13 +1789,14 @@ SuppTable6c %>%
     axis.title.x=element_text(size=12, face = "bold", color = "black"),
     axis.title.y=element_text(size=12, face = "bold", color = "black"))+
   coord_flip() +
- facet_wrap(~rowname, nrow=1, ncol=3) +
-  labs(title = "Category", x = "time") + 
+  labs(y = "HR", x = "Interval") + 
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold"))
 ```
+
 # SUPPLEMENTARY TABLE 6: HRs by time interval
 ```{r}
 SuppTable6 <- rbind(SuppTable6a, SuppTable6b, SuppTable6c)
+
 ```
 
 # Effect modification by sex
@@ -2296,20 +2298,19 @@ SuppTable5 <- SuppTable5 %>%
 
 # 6
 SuppTable6 <- SuppTable6 %>%
-  rename(`Time interval` = model,
-         Category = rowname,
-         `lower 95% CI` = `2.5 %`,
-         `upper 95% CI` = `97.5 %`) %>%
-  mutate(Category = case_when(Category == "In_Medicaid_FlagEnrolled" ~ "Enrolled",
-            Category == "mcont66Discontinuous" ~ "Discontinuous",
-            Category == "mcont66Other" ~ "Other",
-            Category == "mcont66Continuous" ~ "Continuous")) %>%
-  
+  rename(`Time interval` = interval,
+         Category = category,
+         `lower 95% CI` = lwr,
+         `upper 95% CI` = upr) %>%
+  mutate(Category = case_when(Category == "Enrolled"~ "Enrolled",
+            Category == "discontinuous" ~ "Discontinuous",
+            Category == "other" ~ "Other",
+            Category == "continuous" ~ "Continuous")) %>%
   mutate_if(is.numeric, round, 2)
 
-SuppTable6$`HR (95% CI)` <-paste0(SuppTable6$HR, " (", SuppTable6$`lower 95% CI`, " to ", SuppTable6$`upper 95% CI`, ")") 
+SuppTable6$`HR (95% CI)` <-paste0(SuppTable6$Estimate, " (", SuppTable6$`lower 95% CI`, " to ", SuppTable6$`upper 95% CI`, ")") 
 SuppTable6 <- SuppTable6 %>%
-  dplyr::select(1,5,6,7)
+  dplyr::select(4,5,6,7)
 
 # 7
 SuppTable7 <- SuppTable7 %>%
@@ -2341,7 +2342,7 @@ sheets <- list("Supp Table 1 (stage cantype)" = SuppTable1,
                "Supp Table 5 (surv prob can )" = SuppTable5,
                "Supp Table 6 (ph analysis)" = SuppTable6, 
                "Supp Table 7 (EM)" = SuppTable7)
-write.xlsx(sheets, file="Supplementary tables.xlsx", showNA=TRUE, overwrite = TRUE)
+write.xlsx(sheets, file="Supplementary tables updated.xlsx", showNA=TRUE, overwrite = TRUE)
 ```
 
 
