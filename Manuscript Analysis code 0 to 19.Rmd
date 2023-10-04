@@ -2266,7 +2266,7 @@ SuppTable2 <- SuppTable2 %>%
 SuppTable2$`Survival Percentage (95% CI)` <-paste0(SuppTable2$`Survival Percentage`, " (", SuppTable2$`lower 95% CI`, " to ", SuppTable2$`upper 95% CI`, ")")
 # drop uneeded columns
 SuppTable2 <- SuppTable2 %>%
-  dplyr::select(1,5)
+  dplyr::select(1,6)
 
 # 3
 SuppTable3 <- SuppTable3 %>%
