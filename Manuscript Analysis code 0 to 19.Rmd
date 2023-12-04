@@ -198,9 +198,7 @@ seer0to39<-seer0to39 %>%
 "Sequence_number", "Month_of_diagnosis", "Year_of_diagnosis",
 "Month_of_diagnosis_recode", "Primary_Site", "Laterality", "Histology_ICD_O_2",
 "Behavior_code_ICD_O_2", "Histologic_Type_ICD_O_3", "Behavior_code_ICD_O_3",
-"Grade", "Diagnostic_Confirmation", "Type_of_Reporting_Source", 
-"Derived_AJCC_T_6th_ed_2004_2015", 
-"Derived_AJCC_N_6th_ed_2004_2015",
+"Grade", "Diagnostic_Confirmation", "Type_of_Reporting_Source", "Derived_AJCC_T_6th_ed_2004_2015", "Derived_AJCC_N_6th_ed_2004_2015",
 "Derived_AJCC_M_6th_ed_2004_2015", 
 "DerivedAJCCStageGroup6thed20042",
 "SEERCombinedSummaryStage2000200", 
@@ -244,7 +242,7 @@ seer0to39<-seer0to39 %>%
                                 Age_recode_with_1_year_olds == 4 ~3, # 15 to 19
                                 Age_recode_with_1_year_olds %in% c(5,6,7,8) ~ 4)) %>% # 20 to 39
          
-         mutate(race_cat=case_when(Race_recode_W_B_AI_API == 1 ~0, # White
+        mutate(race_cat=case_when(Race_recode_W_B_AI_API == 1 ~0, # White
                                 Race_recode_W_B_AI_API == 2 ~1, # Black
                                 Race_recode_W_B_AI_API == 3 ~2, # AIAN
                                 Race_recode_W_B_AI_API == 4 ~3, # API
@@ -276,6 +274,7 @@ table(seer0to39$SEERcausespecificdeathclassific, useNA = "always")
 # Factor variables
 seer0to39$age_cat<-factor(seer0to39$age_cat, levels=c(0:4), labels=c("0-4", "5-9", "10-14", "15-19", "20-39"))
 seer0to39$race_cat<-factor(seer0to39$race_cat, levels=c(0:4), labels=c("White", "Black", "AIAN", "API", "Unknown"))
+seer0to39$race_cat2<-factor(seer0to39$race_cat2, levels=c(0:2), labels=c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic Other"))
 seer0to39$hispanic<-factor(seer0to39$hispanic, levels=c(0:1), labels=c("Non-Hispanic", "Hispanic"))
 seer0to39$race_ethnicity<-factor(seer0to39$race_ethnicity, levels=c(0:4), labels=c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic API", "Non-Hispanic Other",  "Hispanic")) 
 seer0to39$sex <- factor(seer0to39$sex, levels = c(0:2), labels = c("Male", "Female", "Not Stated"))
@@ -388,7 +387,7 @@ seer0to39 <- seer0to39 %>%
                            SEERCombinedSummaryStage2000200 %in% c(2,3,4,5) ~ 1,
                            SEERCombinedSummaryStage2000200 %in% c(7) ~ 2))
 
-seer0to39$stage <- factor(seer0to39$stage, levels = c(0:2), labels = c("In situ/localized", "Regional", "Distant"))
+seer0to39$stage <- factor(seer0to39$stage, levels = c(0:2), labels = c("in situ/localized", "Regional", "Distant"))
 
 table(seer0to39$stage, useNA ="always")
 
@@ -396,67 +395,6 @@ table(seer0to39$SEER_DateofDeath_Year, useNA = "always")
 
 table(seer0to39$can_type)
 
-```
-
-# test code
-```{r}
-
-# create categories for AYA codes
-class(seer0to39$AYA_site_recode_WHO_2008) # numeric
-
-seer0to39 <- seer0to39 %>%
-  mutate(can_typeAYA = case_when(AYA_site_recode_WHO_2008 %in% c(1,2,3,4) ~ 0,
-                                 AYA_site_recode_WHO_2008 %in% c(5,6) ~ 1,
-                                 AYA_site_recode_WHO_2008 %in% c(7,8,9,10,11,12,13,14,15,16) ~ 2,
-                                 AYA_site_recode_WHO_2008 %in% c(17,18,19,20) ~ 3,
-                                 AYA_site_recode_WHO_2008 %in% c(21,22,23,24,25) ~ 4,
-                                 AYA_site_recode_WHO_2008 %in% c(26,27,28) ~ 5,
-                                 AYA_site_recode_WHO_2008 %in% c(29,30) ~ 6,
-                                 AYA_site_recode_WHO_2008 %in% c(31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48) ~ 7,
-                                 AYA_site_recode_WHO_2008 %in% c(49,50,51,52,53,54,55) ~ 8,
-                                 AYA_site_recode_WHO_2008 %in% c(55,56) ~ 9,
-                                 AYA_site_recode_WHO_2008 == 99 ~ 10))
-                                 
-seer0to39$can_typeAYA <- factor(seer0to39$can_typeAYA, levels = c(0:10), labels = c(
-  "1. Leukemias",
-  "2. Lymphomas",
-  "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)",
-  "4. Osseous & Chondromatous Neoplasms",
-  "5. Soft Tissue Sarcomas",
-  "6. Germ Cell and Trophoblastic Neoplasms",
-  "7. Melanoma and Skin Carcinomas",
-  "8. Carcinomas",
-  "9. Miscellaneous specified neoplasms, NOS",
-  "10. Unspecified Malignant Neoplasms",
-  "Unclassified"))
-table(seer0to39$can_typeAYA, useNA = "always")
-
-
-# categorize brain tumors according to AYA definition
-
-seer0to39 <- seer0to39 %>%
-  mutate(brain = case_when (can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)"  & AYA_site_recode_WHO_2008 %in% c(7,8,9) ~ 0, # 3.1 Astrocytoma
-                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(10) ~ 1, # 3.2 Other glioma
-                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(11) ~ 2, # 3.3 Ependymoma
-                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(12,13) ~ 3, # 3.4 Medulloblastoma and other PNET
-                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(14) ~ 4, # 3.5 Other specified intracranial and instraspinal neoplasms
-                            can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)" & AYA_site_recode_WHO_2008 %in% c(15,16) ~ 5)) # 3.6 Unspecified intracranial and intraspinal neoplasms
-seer0to39$brain
-table(seer0to39$brain, useNA = "always")
-
-seer0to39$brain <- factor(seer0to39$brain, levels = c(0:5), labels = c(
-  "3.1 Astrocytoma",
-  "3.2 Other glioma",
-  "3.3 Ependymoma",
-  "3.4 Medulloblastoma and other PNET",
-  "3.5 Other specified intracranial and instraspinal neoplasms",
-  "3.6 Unspecified intracranial and intraspinal neoplasms"))
-table(seer0to39$brain, useNA = "always")
-
-df <- seer0to39 %>%
-  filter(can_type == "III. CNS and miscellaneous intracranial and intraspinal neoplasms"|can_typeAYA == "3. CNS and Other Intracranial and Intraspinal Neoplasms (all behaviors)") %>%
-  group_by(can_type, can_typeAYA)%>%
-  tally()
 ```
 
 # Exclusions
@@ -480,7 +418,7 @@ seer0to19 <- seer0to19 %>%
   filter(Sequence_number %in% c("00", "01")) # 32,380
 ```
 
-# Exclude those diagnosed before 2006 (a handful)
+# Exclude those diagnosed before 2006 
 ```{r}
 seer0to19 <- seer0to19 %>%
   filter(Year_of_diagnosis >=2006) # 32,380
@@ -544,13 +482,25 @@ seer0to19 <- seer0to19 %>%
   mutate(mcont66 = case_when(In_Medicaid_Flag == 0 ~ 0, # not linked
                              mcontb == 0 ~ 1, # continuous
                              mcontb == 1 ~ 2, # discontinuous
-                             mcontb == 2 ~ 3)) # Other
-table(seer0to19$mcont66, useNA = "always")
+                             mcontb == 2 ~ 3)) %>% # Other
+  mutate(mcont66b = case_when(In_Medicaid_Flag == 0 ~ 0, # not linked
+                             mcontb2 == 0 ~ 1, # continuous
+                             mcontb2 == 1 ~ 2, # discontinuous
+                             mcontb2 == 2 ~ 3, # Other
+                             mcontb2 == 3 ~ 4)) # at or after diagnosis 
 
+table(seer0to19$mcont66, useNA = "always")
 table(seer0to19$mcont66, seer0to19$In_Medicaid_Flag, useNA = "always") 
+
+
+table(seer0to19$mcont66b, useNA = "always")
+table(seer0to19$mcont66b, seer0to19$In_Medicaid_Flag, useNA = "always") 
 
 # create factor variable for analyses
 seer0to19$mcont66 <- factor(seer0to19$mcont66, levels = c(0:3), labels = c("Not enrolled", "Continuous", "Discontinuous", "Other"))
+seer0to19$mcont66b <- factor(seer0to19$mcont66b, levels = c(0:4), labels = c("Not enrolled", "Continuous", "Discontinuous", "Other", "At diagnosis"))
+
+table(seer0to19$mcont66b)
 ```
 
 
@@ -613,10 +563,45 @@ table(seer0to19$In_Medicaid_Flag)
 
 table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19)
 
-table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19 %>% filter(Agerecodewithsingleages_and_100 !=18 ))
+table1(~can_type|In_Medicaid_Flag, seer0to19)
 
 
-table1(~mcont66|age_cat, droplevels = TRUE, seer0to19%>% filter(Agerecodewithsingleages_and_100 <18 ))
+table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66b, droplevels = TRUE, seer0to19)
+```
+
+# FOR REVISION (insurance distribution)
+```{r}
+# classify primary payor variable
+class(seer0to19$Primary_Payer_at_DX)
+seer0to19$Primary_Payer_at_DX <- as.numeric(seer0to19$Primary_Payer_at_DX)
+
+seer0to19 <- seer0to19 %>%
+  mutate(payer = case_when(Primary_Payer_at_DX %in% c(1,2) ~ 0,
+                           Primary_Payer_at_DX %in% c(10,20,21) ~ 1,
+                           Primary_Payer_at_DX %in% c(31,35) ~ 2,
+                           Primary_Payer_at_DX %in% c(60,64) ~ 3,
+                           Primary_Payer_at_DX %in% c(65,66,67,68) ~ 4,
+                           Primary_Payer_at_DX == 99 ~ 5))
+
+seer0to19$payer <- factor(seer0to19$payer, levels = c(0:5), labels = c("Uninsured", "Private and Insurance NOS", "Medicaid", "Medicare", "Other", "Unknown"))
+
+seer0to19$Insurance_Recode_2007 <- as.numeric(seer0to19$Insurance_Recode_2007)
+table(seer0to19$Insurance_Recode_2007, useNA = "always")
+seer0to19 <- seer0to19 %>%
+  mutate(insurance = case_when(Insurance_Recode_2007 == 1 ~ 0,
+                               Insurance_Recode_2007 == 2 ~ 1,
+                               Insurance_Recode_2007 == 3 ~ 2,
+                               Insurance_Recode_2007 == 4 ~ 3,
+                               Insurance_Recode_2007 == 5 ~ 4))
+
+label(seer0to19$insurance) <- "Insurance at diagnosis or initial treatment"
+
+seer0to19$insurance <- factor(seer0to19$insurance, levels = c(0:4), labels = c("Uninsured", "Any Medicaid", "Insured", "Insured/No specifics", "Insurance status unknown"))
+
+# Not shown in paper
+table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2 + insurance|mcont66, droplevels = TRUE, seer0to19)
+
+table1(~insurance|mcont66, droplevels = TRUE, seer0to19)
 ```
 
 # TABLE 2: Stage analysis (unadjusted)
@@ -628,12 +613,21 @@ seer0to19_stage <- seer0to19 %>%
 # the mlogit.cluster function does not like labels
 seer0to19_stage <- seer0to19_stage %>% 
   remove_labels()
+```
 
+# FOR REVISION QUESTION (why not use AJCC staging vs. summary stage)--check missing data by cancer type for both
+```{r}
+colnames(seer0to19_stage)
+
+table1(~ as.factor(SEERCombinedSummaryStage2000200) + as.factor(DerivedAJCCStageGroup6thed20042), seer0to19_stage)
+```
+
+```{r}
 # exclude those with missing stage and redefine some variables so the function doesn't throw an error.
 seer0to19_stage <- seer0to19_stage %>%
   filter(!is.na(stage)) %>% # this yields 21,502
   select(stage, In_Medicaid_Flag, SEER_registry, mcont66, race_cat2, age_cat, Yost_ACS_2006_2010_quintile, state, can_type) %>%
-  mutate(stage2 = case_when(stage == "In situ/localized" ~ "0: In situ/localized",
+  mutate(stage2 = case_when(stage == "in situ/localized" ~ "0: In situ/localized",
                             stage == "Regional" ~ "1: Regional",
                             stage == "Distant" ~  "2: Distant")) 
 
@@ -665,18 +659,18 @@ df2<-as.data.frame(lowCI)
 df3<-as.data.frame(highCI)
 df4 <- cbind(df, df2, df3) # this is the result dataset
 
-# relabel columns and dropt intercept rows
+# relabel columns and drop intercept rows
 names(df4)[1:3]<-c("OR", "lowCI", "highCI")
 df4
 
 df4<-df4[-c(1,3),]
-df4 <- tibble::rownames_to_column(df4, "Category") # Apply rownames_to_column
+df4 <- tibble::rownames_to_column(df4, "Exposure comparison") # Apply rownames_to_column
 
 # Replace multiple strings at a time
-rep_str = c('1: Regional:In_Medicaid_FlagEnrolled'='Regional','2: Distant:In_Medicaid_FlagEnrolled'='Distant')
-rep_str2 = c('1: Regional:In_Medicaid_FlagEnrolled'='Enrolled','2: Distant:In_Medicaid_FlagEnrolled'='Enrolled')
-df4$Stage<- str_replace_all(df4$Category, rep_str)
-df4$Category<- str_replace_all(df4$Category, rep_str2) # this is the dataframe for summary results
+rep_str = c('1: Regional:In_Medicaid_FlagEnrolled'='Regional vs. in situ/localized','2: Distant:In_Medicaid_FlagEnrolled'='Distant vs. in situ/localized')
+rep_str2 = c('1: Regional:In_Medicaid_FlagEnrolled'='Enrolled vs. Not enrolled','2: Distant:In_Medicaid_FlagEnrolled'='Enrolled vs. Not enrolled')
+df4$Stage<- str_replace_all(df4$`Exposure comparison`, rep_str)
+df4$`Exposure comparison`<- str_replace_all(df4$`Exposure comparison`, rep_str2) # this is the dataframe for summary results
 
 # mcont66 model
 model2 <- multinom(stage2 ~ mcont66, data=seer0to19_stage)
@@ -705,24 +699,26 @@ names(df8)[1:3]<-c("OR", "lowCI", "highCI")
 df8
 
 df8<-df8[-c(1,5),]
-df8 <- tibble::rownames_to_column(df8, "Category") # Apply rownames_to_column
+df8 <- tibble::rownames_to_column(df8, "Exposure comparison") # Apply rownames_to_column
 df8  
 
 # Replace multiple strings at a time
-rep_str = c('1: Regional:mcont66Continuous'='Regional','1: Regional:mcont66Discontinuous'='Regional','1: Regional:mcont66Other'='Regional', '2: Distant:mcont66Continuous'='Distant','2: Distant:mcont66Discontinuous'='Distant','2: Distant:mcont66Other'='Distant')
-df8$Stage<- str_replace_all(df8$Category, rep_str)
+rep_str = c('1: Regional:mcont66Continuous'='Regional vs. in situ/localized','1: Regional:mcont66Discontinuous'='Regional. vs. in situ/localized','1: Regional:mcont66Other'='Regional vs. in situ/localized', '2: Distant:mcont66Continuous'='Distant vs. in situ/localized','2: Distant:mcont66Discontinuous'='Distant vs. in situ/localized','2: Distant:mcont66Other'='Distant vs. in situ/localized')
+df8$Stage<- str_replace_all(df8$`Exposure comparison`, rep_str)
 df8
-rep_str2 = c('1: Regional:mcont66Continuous'='Continuous','1: Regional:mcont66Discontinuous'='Discontinuous','1: Regional:mcont66Other'='Other', '2: Distant:mcont66Continuous'='Continuous','2: Distant:mcont66Discontinuous'='Discontinuous','2: Distant:mcont66Other'='Other')
-df8$Category<- str_replace_all(df8$Category, rep_str2)
+
+rep_str2 = c('1: Regional:mcont66Continuous'='Continuous vs. Not enrolled','1: Regional:mcont66Discontinuous'='Discontinuous vs. Not enrolled','1: Regional:mcont66Other'='Other vs. Not enrolled', '2: Distant:mcont66Continuous'='Continuous vs. Not enrolled','2: Distant:mcont66Discontinuous'='Discontinuous vs. Not enrolled','2: Distant:mcont66Other'='Other vs. Not enrolled')
+
+df8$`Exposure comparison`<- str_replace_all(df8$`Exposure comparison`, rep_str2)
 df8 # this is the dataframe for summary results
 ```
 
 
 # Adjusted models
 ```{r}
-model1a <- multinom(stage2 ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile , data=seer0to19_stage)
+model1a <- multinom(stage2 ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile + can_type, data=seer0to19_stage)
 summary(model1a)
-nrow(fitted(model1a)) # 21,507 is number of obs
+nrow(fitted(model1a)) # 21,502 is number of obs
 
 b <- c(t(coef(model1a)))
 var <- mlogit.clust(model1a, seer0to19_stage, "state")
@@ -739,7 +735,7 @@ df12 <- cbind(df9, df10, df11) # this is the result dataset
 names(df12)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
 df12
 
-df12<-df12[-c(1,3:11, 13:20),]
+df12<-df12[-c(1, 3:23, 25:44),]
 df12 <- tibble::rownames_to_column(df12, "Category") # Apply rownames_to_column
 df12  
 
@@ -751,7 +747,7 @@ df12$Category<- "Enrolled"
 df12 # this is the dataframe for summary results
 
 # adjusted model
-model2a <- multinom(stage2 ~mcont66 + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, data=seer0to19_stage)
+model2a <- multinom(stage2 ~mcont66 + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile + can_type, data=seer0to19_stage)
 summary(model2a)
 nrow(fitted(model2a))
 
@@ -770,7 +766,7 @@ df16 <- cbind(df13, df14, df15) # this is the result dataset
 names(df16)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
 df16
 
-df16<-df16[-c(1,5:13, 17:24),]
+df16<-df16[-c(1, 5:25, 29:48),]
 df16 <- tibble::rownames_to_column(df16, "Category") # Apply rownames_to_column
 df16  
 
@@ -779,6 +775,7 @@ rep_str = c('1: Regional:mcont66Continuous'='Regional','1: Regional:mcont66Disco
 df16$Stage<- str_replace_all(df16$Category, rep_str)
 
 rep_str2 = c('1: Regional:mcont66Continuous'='Continuous','1: Regional:mcont66Discontinuous'='Discontinuous','1: Regional:mcont66Other'='Other', '2: Distant:mcont66Continuous'='Continuous','2: Distant:mcont66Discontinuous'='Discontinuous','2: Distant:mcont66Other'='Other')
+
 df16$Category<- str_replace_all(df16$Category, rep_str2)
 df16 # this is the dataframe for summary results
 ```
@@ -797,7 +794,7 @@ seer0to19_stage <- seer0to19_stage%>%
 seer0to19_stage$mcont66.2 <- factor(seer0to19_stage$mcont66.2, levels = c(0:3), labels = c("Continuous", "Discontinuous", "Other", "Not enrolled"))
 
 # adjusted model
-model2a <- multinom(stage2 ~ mcont66.2 + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, data=seer0to19_stage)
+model2a <- multinom(stage2 ~ mcont66.2 + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile + can_type, data=seer0to19_stage)
 summary(model2a)
 nrow(fitted(model2a))
 
@@ -819,7 +816,7 @@ df20 <- cbind(df17, df18, df19) # this is the result dataset
 names(df20)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
 df20
 
-df20<-df20[-c(1,5:13, 17:24),]
+df20<-df20[-c(1, 5:25, 29:48),]
 df20 <- tibble::rownames_to_column(df20, "Category") # Apply rownames_to_column
 df20  
 ```
@@ -855,8 +852,9 @@ df2a <- cbind(b, lCI, hCI) # this is the result dataset
 # relabel columns and dropt intercept rows
 
 names(df2a)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
-df2a<-df2a[-c(1,3:11, 13:20),]
-df2a <- tibble::rownames_to_column(df2a, "Category") # Apply rownames_to_column
+
+df2a<-df2a[-c(1, 3:12, 14:22),]
+df2a <- tibble::rownames_to_column(df2a, "Category comparison") # Apply rownames_to_column
 df2a  
 df2a$CancerType<-i # add cancer type
 df1a <-rbind(df2a, df1a)
@@ -888,8 +886,9 @@ df4a <- cbind(b, lCI, hCI) # this is the result dataset
 # relabel columns and dropt intercept rows
 
 names(df4a)[1:3]<-c("OR", "cluster.lowCI", "cluster.highCI")
-df4a <-df4a[-c(1,5:13, 17:24),]
-df4a <- tibble::rownames_to_column(df4a, "Category") # Apply rownames_to_column
+
+df4a <-df4a[-c(1, 5:14, 18:26),]
+df4a <- tibble::rownames_to_column(df4a, "Category comparison") # Apply rownames_to_column
 df4a  
 df4a$CancerType<-i # add cancer type
 df3a <-rbind(df4a, df3a)
@@ -903,18 +902,36 @@ SuppTable1b<- df3a[order(df3a$CancerType),] # mcont66
 SuppTable1 <- rbind(SuppTable1a, SuppTable1b)
 
 # Replace multiple strings at a time
-rep_str = c('1: Regional:mcont66Continuous'='Regional','1: Regional:mcont66Discontinuous'='Regional','1: Regional:mcont66Other'='Regional', '2: Distant:mcont66Continuous'='Distant','2: Distant:mcont66Discontinuous'='Distant','2: Distant:mcont66Other'='Distant', '1: Regional:In_Medicaid_FlagEnrolled'='Regional','2: Distant:In_Medicaid_FlagEnrolled'='Distant')
-SuppTable1$Stage<- str_replace_all(SuppTable1$Category, rep_str)
+rep_str = c('1: Regional:mcont66Continuous'='Regional vs. in situ/localized','1: Regional:mcont66Discontinuous'='Regional vs. in situ/localized','1: Regional:mcont66Other'='Regional vs. in situ/localized', '2: Distant:mcont66Continuous'='Distant vs. in situ/localized','2: Distant:mcont66Discontinuous'='Distant vs. in situ/localized','2: Distant:mcont66Other'='Distant vs. in situ/localized', '1: Regional:In_Medicaid_FlagEnrolled'='Regional vs. in situ/localized','2: Distant:In_Medicaid_FlagEnrolled'='Distant vs. in situ/localized')
+SuppTable1$`Stage outcome comparison`<- str_replace_all(SuppTable1$`Category comparison`, rep_str)
 
-rep_str2 = c('1: Regional:mcont66Continuous'='Continuous','1: Regional:mcont66Discontinuous'='Discontinuous','1: Regional:mcont66Other'='Other', '2: Distant:mcont66Continuous'='Continuous','2: Distant:mcont66Discontinuous'='Discontinuous','2: Distant:mcont66Other'='Other', '1: Regional:In_Medicaid_FlagEnrolled'='Enrolled','2: Distant:In_Medicaid_FlagEnrolled'='Enrolled')
-SuppTable1$Category<- str_replace_all(SuppTable1$Category, rep_str2)
+rep_str2 = c('1: Regional:mcont66Continuous'='Continuous vs. Not enrolled','1: Regional:mcont66Discontinuous'='Discontinuous vs. Not enrolled','1: Regional:mcont66Other'='Other vs. Not enrolled', '2: Distant:mcont66Continuous'='Continuous vs. Not enrolled','2: Distant:mcont66Discontinuous'='Discontinuous vs. Not enrolled','2: Distant:mcont66Other'='Other vs. Not enrolled', '1: Regional:In_Medicaid_FlagEnrolled'='Enrolled vs. Not enrolled','2: Distant:In_Medicaid_FlagEnrolled'='Enrolled vs. Not enrolled')
+SuppTable1$`Category comparison`<- str_replace_all(SuppTable1$`Category comparison`, rep_str2)
 
-SuppTable1
+names(SuppTable1)[1]<-c("Exposure comparison")
+
 ```
 
 # Add table 2 to SuppTable1 (with clustered SEs) to plot on one plot
 ```{r}
 Table2$CancerType<-"Overall"
+
+# Replace multiple strings at a time
+rep_str = c('Regional'='Regional vs. in situ/localized','Distant'='Distant vs. in situ/localized')
+Table2$Stage<- str_replace_all(Table2$Stage, rep_str)
+
+
+rep_str2 = c('Enrolled'='Enrolled vs. Not enrolled','Continuous'='Continuous vs. Not enrolled', 'Discontinuous'='Discontinuous vs. Not enrolled', 'Other'='Other vs. Not enrolled')
+Table2$Category<- str_replace_all(Table2$Category, rep_str2)
+
+
+names(Table2)[1]<-c("Exposure comparison")
+names(Table2)[5]<-c("Stage outcome comparison")
+
+
+# Reorder columns using the pipe operator
+Table2 <- Table2 %>% select("Exposure comparison" ,  "OR", "cluster.lowCI","cluster.highCI", "CancerType", "Stage outcome comparison")
+
 
 SuppTable1 <- rbind(Table2, SuppTable1)
 ```
@@ -923,7 +940,7 @@ SuppTable1 <- rbind(Table2, SuppTable1)
 ```{r}
 # graph ORs and 95% CIs
 SuppTable1a <- SuppTable1 %>%
-  filter(CancerType != "V. Retinoblastoma")
+  filter(`CancerType` != "V. Retinoblastoma")
 
 SuppTable1a <- SuppTable1a %>%
   mutate(Abbrev = case_when(CancerType == "Overall" ~ "Overall",
@@ -943,17 +960,17 @@ SuppTable1a$Abbrev <- factor(SuppTable1a$Abbrev, levels = c("Overall", "LYMPH", 
                                                   "RT", "HT", "MBT", "STS", "GCT",
                                                   "OTHEP", "OTHUN"))
 
-SuppTable1a$Stage <- factor(SuppTable1a$Stage, levels = c("Regional", "Distant"))
+SuppTable1a$`Stage outcome comparison` <- factor(SuppTable1a$`Stage outcome comparison`, levels = c("Regional vs. in situ/localized", "Distant vs. in situ/localized"))
 
 SuppTable1a$Abbrev<- fct_rev(SuppTable1a$Abbrev)
 
 Plot1 <- SuppTable1a %>%
-  filter(Category == "Enrolled", Stage == "Regional") %>%
+  filter(`Exposure comparison` == "Enrolled vs. Not enrolled", `Stage outcome comparison` == "Regional vs. in situ/localized") %>%
   ggplot() +
-  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category)) + 
+  geom_point(aes(y=OR, x = Abbrev, group = `Exposure comparison`, color = `Exposure comparison`), color = "black") + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=OR, x=Abbrev, group = Category, color = Category, ymax = cluster.highCI, ymin = cluster.lowCI), width = 0.1) +
+  geom_errorbar(aes(y=OR, x=Abbrev, group = `Exposure comparison`, color = `Exposure comparison`, ymax = cluster.highCI, ymin = cluster.lowCI), width = 0.1,  color = "black") +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -965,20 +982,20 @@ Plot1 <- SuppTable1a %>%
     axis.title.x=element_text(size=12, face = "bold", color = "black"),
     axis.title.y=element_text(size=12, face = "bold", color = "black"))+
   coord_flip() +
-  labs(color = NULL, title = "A", x = "Cancer type") +
-  ylim(0,2) +
+  labs(color = NULL, title = "A. Regional vs. in situ/localized", x = "Cancer type") +
+  ylim(0,3.5) +
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
   scale_color_manual(breaks = c("Enrolled"), values=c("black")) 
 
 Plot1
 
 Plot2 <- SuppTable1a %>%
-  filter(Category == "Enrolled", Stage == "Distant") %>%
+  filter(`Exposure comparison` == "Enrolled vs. Not enrolled", `Stage outcome comparison` == "Distant vs. in situ/localized") %>%
   ggplot() +
-  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category)) + 
+  geom_point(aes(y=OR, x = Abbrev, group = `Exposure comparison`, color = `Exposure comparison`), color = "black") + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=OR, x=Abbrev, group = Category, color = Category, ymax = cluster.highCI, ymin = cluster.lowCI), width = 0.1) +
+  geom_errorbar(aes(y=OR, x=Abbrev, group = `Exposure comparison`, color = `Exposure comparison`, ymax = cluster.highCI, ymin = cluster.lowCI), width = 0.1, color = "black") +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -990,7 +1007,7 @@ Plot2 <- SuppTable1a %>%
     axis.title.x=element_text(size=12, face = "bold", color = "black"),
     axis.title.y=element_text(size=12, face = "bold", color = "black"))+
   coord_flip() +
-  labs(color = NULL, title = "B", x = "Cancer type") +
+  labs(color = NULL, title = "B. Distant vs. in situ/localized", x = "Cancer type") +
   ylim(0,3.5) +
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
   scale_color_manual(breaks = c("Enrolled"), values=c("black")) 
@@ -1002,16 +1019,16 @@ Plot2
 # FIGURE 2:  Stage analysis by cancer type mcont66
 ```{r}
 # graph ORs and 95% CIs
-SuppTable1a$Category <- factor(SuppTable1a$Category, levels = c("Enrolled", "Discontinuous", "Other", "Continuous"))
+SuppTable1a$`Exposure comparison` <- factor(SuppTable1a$`Exposure comparison`, levels = c("Enrolled vs. Not enrolled", "Discontinuous vs. Not enrolled", "Other vs. Not enrolled", "Continuous vs. Not enrolled"))
 
 Plot3 <- SuppTable1a %>%
-  filter(Category != "Enrolled", Stage == "Regional") %>%
+  filter(`Exposure comparison` != "Enrolled vs. Not enrolled", `Stage outcome comparison` == "Regional vs. in situ/localized") %>%
   ggplot() +
-  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category), na.rm=TRUE, position=position_dodge(width=0.9)) + 
+  geom_point(aes(y=OR, x = Abbrev, group = `Exposure comparison`, color = `Exposure comparison`), na.rm=TRUE, position=position_dodge(width=0.9)) + 
   geom_hline(yintercept =1, linetype=2) +
   geom_vline(xintercept =c(1.5, 2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5), linetype=2, color = "lightgray") +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(position = position_dodge(width=0.9), aes(y=OR, x=Abbrev, group = Category, color = Category,  ymax = cluster.highCI, ymin = cluster.lowCI),  width = 0.1) +
+  geom_errorbar(position = position_dodge(width=0.9), aes(y=OR, x=Abbrev, group = `Exposure comparison`, color = `Exposure comparison`,  ymax = cluster.highCI, ymin = cluster.lowCI),  width = 0.1) +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -1023,24 +1040,23 @@ Plot3 <- SuppTable1a %>%
     axis.title.x=element_text(size=12, face = "bold", color = "black"),
     axis.title.y=element_text(size=12, face = "bold", color = "black"))+
   coord_flip() +
- # facet_grid(cols = vars(y.level)) +
-  labs(color = NULL, title = "C", x = "Cancer type") +
+  labs(color = NULL, title = "C. Regional vs. in situ/localized", x = "Cancer type") +
   ylim(0,4.0) +
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
-  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled", "Continuous vs. Not enrolled", "Other vs. Not enrolled"),
                         values=c("red", "cyan3", "blue")) 
 
 Plot3
-
+table(SuppTable1a$`Exposure comparison`)
 
 Plot4 <- SuppTable1a %>%
-  filter(Category != "Enrolled", Stage == "Distant") %>%
+  filter(`Exposure comparison` != "Enrolled vs. Not enrolled", `Stage outcome comparison` == "Distant vs. in situ/localized") %>%
   ggplot() +
-  geom_point(aes(y=OR, x = Abbrev, group = Category, color = Category), na.rm=TRUE, position=position_dodge(width=0.9)) + 
+  geom_point(aes(y=OR, x = Abbrev, group = `Exposure comparison`, color = `Exposure comparison`), na.rm=TRUE, position=position_dodge(width=0.9)) + 
   geom_hline(yintercept =1, linetype=2) +
   geom_vline(xintercept =c(1.5, 2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5), linetype=2, color = "lightgray") +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(position = position_dodge(width=0.9), aes(y=OR, x=Abbrev, group = Category, color = Category,  max = cluster.highCI, ymin = cluster.lowCI),  width = 0.1) +
+  geom_errorbar(position = position_dodge(width=0.9), aes(y=OR, x=Abbrev, group = `Exposure comparison`, color = `Exposure comparison`,  max = cluster.highCI, ymin = cluster.lowCI),  width = 0.1) +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -1053,10 +1069,10 @@ Plot4 <- SuppTable1a %>%
     axis.title.y=element_text(size=12, face = "bold", color = "black"))+
   coord_flip() +
  # facet_grid(cols = vars(y.level)) +
-  labs(color = NULL, title = "D", x = "Cancer type") +
+  labs(color = NULL, title = "D. Distant vs. in situ/localized", x = "Cancer type") +
   ylim(0,5.5) +
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
-  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled", "Continuous vs. Not enrolled", "Other vs. Not enrolled"),
                         values=c("red", "cyan3", "blue")) 
 
 Plot4
@@ -1131,10 +1147,50 @@ plot1$plot + plot2$plot + plot_layout(ncol=1, nrow=2, guides='keep') &
 
 dev.off()
 ```
+# Survival plots with discontinuous divided to at diagnosis and the rest
+```{r}
+# mcont66b
+ plot3 <- ggsurvplot(fit = survfit(Surv(fumo, can_dead) ~ mcont66b, data = seer0to19 ), 
+    xlab = "Months from diagnosis", 
+    ylab = "Survival probability", 
+    fun="pct", 
+    title = "B",
+    font.title = c(12, "bold"),
+    legend.title = "",
+    legend = "bottom",
+    font.legend=c(12, "bold"),
+    legend.labs = c("Not enrolled", "Continuous", "Discontinuous", "Other", "At diagnosis"),
+    palette = c("red", "cyan3", "blue", "black", "purple"),
+    font.x = c(12, "bold"),
+    font.y = c(12, "bold"),
+    xlim=c(0, 60),
+    break.x.by = 12,
+    ylim=c(50, 100),
+    censor.size=0.5,
+    font.tickslab = c(12, "bold"),
+    pval=TRUE,
+    pval.size = 5,
+    pval.coord = c(2,55),
+    conf.int = FALSE)
+
+plot3
+
+pdf("Figure 3.pdf", width=8.5, height=11, paper="USr")
+plot1$plot + plot2$plot + plot_layout(ncol=1, nrow=2, guides='keep') &
+  theme(legend.position='bottom')
+
+dev.off()
+```
+
 # SUPPLEMENTARY TABLE 2: Estimate survival time 0 to 19 at 60 mo
 ```{r}
 # Overall
-summary(survfit(Surv(fumo, can_dead) ~ 1, data = seer0to19), times=60) # estimates 60 month survival time
+overall <- summary(survfit(Surv(fumo, can_dead) ~ 1, data = seer0to19), times=60) # estimates 60 month survival time
+
+overall <- as.data.frame(cbind(overall$time, round(overall$surv*100, 2), round(overall$lower*100, 2), round(overall$upper*100,2))) # makes dataframe
+overall$Category <- "Overall"
+overall <- setNames(overall, c("Time (months)", "Survival Percentage", "Lower CI", "Upper CI", "Category")) # gives column names
+overall <- overall %>% select("Category","Time (months)", "Survival Percentage", "Lower CI", "Upper CI")
 
 # In_Medicaid_Flag
 SuppTable2a <- summary(survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag, data = seer0to19), times=60) # estimates 60 month survival time
@@ -1159,7 +1215,7 @@ SuppTable2b <- SuppTable2b %>%
 
 
 # Make Supplementary table 2
-SuppTable2 <- rbind(SuppTable2a, SuppTable2b)
+SuppTable2 <- rbind(overall, SuppTable2a, SuppTable2b)
 SuppTable2 <- unique(SuppTable2)
 ```
 
@@ -1300,7 +1356,7 @@ SuppTable4 <- unique(SuppTable4)
 ```
 
 
-# SUPPLEMENTARY TABLE 5: Populate a table with survival by tumor type at 12, 24, 36, 48, and 60 mo
+# SUPPLEMENTARY TABLE 5: Populate a table with survival by tumor type at 60 mo
 ```{r}
 limited <- seer0to19 %>%
  filter(can_type %in% c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases","II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas", "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas"))
@@ -1393,7 +1449,7 @@ res.cox3
 summary(res.cox3)
 
 # mcont66 adjusted models 0 to 19
-res.cox4 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+res.cox4 <- coxph(Surv(fumo, can_dead) ~ mcont66 + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
 res.cox4
 summary(res.cox4)
 
@@ -1425,6 +1481,7 @@ d<-as.data.frame(exp(cbind(HR = coef(res.cox4), confint(res.cox4))))
     rownames_to_column() %>%
     mutate(model="4. Adjusted for race/ethnicity, age, Yost SES indicator") %>%
     mutate(age_group = "0 to 19 years")
+   
 Table3 <- rbind(a,b,c,d)  
 ```
 
@@ -1441,6 +1498,7 @@ seer0to19$mcont66.2 <- factor(seer0to19$mcont66.2, levels = c(0:3), labels = c("
 # mcont66.2 adjusted models 0 to 19
 res.cox4.2 <- coxph(Surv(fumo, can_dead) ~ mcont66.2 + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
 res.cox4.2
+
 summary(res.cox4.2)
 ```
 
@@ -1458,7 +1516,7 @@ Med4cat
 plot(Medflag[1], resid =FALSE)
 abline(h=0, col=2)
 
-Medflag.surv <- survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity +age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # get survival probabilities
+Medflag.surv <- survfit(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # get survival probabilities
 
 plot(Medflag.surv[1], col=c("black", "red"), main="Medicaid_flag log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t))") #  ph assumption violated
 
@@ -1475,13 +1533,17 @@ ggcoxdiagnostics(res.cox4, type = "schoenfeld")
 # Split a survival data set at specified times to form a counting process format
 # For those with survival time of 0, add 0.5 mo because otherwise splitting doesn't work and it is more accurate
 
+# the if_elsee function does not like labels
+seer0to19 <- seer0to19 %>% 
+  remove_labels()
+
 seer0to19 <- seer0to19 %>%
   mutate(fumo_half = if_else(fumo == 0, 0.5, fumo)) # need to add 0.5 or function doesn't work
 
 seer0to19$patient_id <- as.numeric(rownames(seer0to19))
 
 seer0to19.cp.format <- survSplit(data  = seer0to19,
-                            cut   = c(12, 24, 36),       # cut at time 12,24,36
+                            cut   = c(12, 24, 36),   # cut at time 12,24,36
                             end   = "fumo_half",    # original survival time
                             event = "can_dead",   # event indicator
                             start = "start")    # will be created. zero by default
@@ -1491,7 +1553,8 @@ seer0to19.cp.format <- within(seer0to19.cp.format, {
     # Create new survival object
     SurvObj <- Surv(start, fumo_half, can_dead) 
     # Create interval indicator
-    interval <- factor(start, levels = c(0,12, 24, 36), labels = c("First","Second", "Third", "Fourth"))
+    interval <- factor(start, levels = c(0, 12, 24, 36), labels = c("First","Second", "Third", "Fourth"))
+    SurvObj2 <- Surv((fumo_half - start), can_dead)
 })
 
 # Reordering
@@ -1506,8 +1569,14 @@ age <- unique(seer0to19.cp.format$age_cat)
 
 # testing here
 m <-coxph(SurvObj ~ In_Medicaid_Flag + In_Medicaid_Flag*strata(interval) + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), seer0to19.cp.format)
+m
+
+# try another way
+m2 <- coxph(SurvObj2 ~ In_Medicaid_Flag + In_Medicaid_Flag*strata(interval) + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), seer0to19.cp.format)
 
 m
+m2
+
 library(multcomp)
 X<- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1)
 
@@ -1528,24 +1597,24 @@ x <- coxph(SurvObj ~ In_Medicaid_Flag + In_Medicaid_Flag*strata(interval) + race
   df1<-confint(t0)
   df1 <- as.data.frame(exp(df1$confint))
   
-  df1$interval = "0-<12" # enrolled first interval
+  df1$interval = "0 to ≥12" # enrolled first interval
   
   t12<- glht(x, linfct = X) 
   df2<-confint(t12)
   df2 <- as.data.frame(exp(df2$confint))
-  df2$interval = "12-<24" # enrolled second interval
+  df2$interval = ">12 to ≥24" # enrolled second interval
   
   t24<- glht(x, linfct = Y) 
   df3<-confint(t24)
   df3 <- as.data.frame(exp(df3$confint))
-  df3$interval = "24-<36" # enrolled third interval
+  df3$interval = ">24 to ≥36" # enrolled third interval
   
   t36 <- glht(x, linfct = Z) 
-  df4 <-confint(t36)
-  df4 <- as.data.frame(exp(df4$confint))
-  df4$interval = "36+" # enrolled fourth interval
+  df4.0 <-confint(t36)
+  df4.0 <- as.data.frame(exp(df4.0$confint))
+  df4.0$interval = "≥36" # enrolled fourth interval
   
-  results <-rbind(df1, df2, df3, df4)  # this puts the results from each loop round in the results data file
+  results <-rbind(df1, df2, df3, df4.0)  # this puts the results from each loop round in the results data file
 
   results$Group <- "Overall"
   results$category <- "Enrolled"
@@ -1593,27 +1662,27 @@ for (i in cantype) {
   df1<-confint(t0)
   df1 <- as.data.frame(exp(df1$confint))
   df1$Group <- i
-  df1$interval = "0-<12" # enrolled first interval
+  df1$interval = "0-≥12" # enrolled first interval
   
   t12<- glht(x, linfct = X) 
   df2<-confint(t12)
   df2 <- as.data.frame(exp(df2$confint))
   df2$Group <- i
-  df2$interval = "12-<24" # enrolled second interval
+  df2$interval = ">12-≥24" # enrolled second interval
   
   t24<- glht(x, linfct = Y) 
   df3<-confint(t24)
   df3 <- as.data.frame(exp(df3$confint))
   df3$Group <- i
-  df3$interval = "24-<36" # enrolled third interval
+  df3$interval = ">24-≥36" # enrolled third interval
   
   t36 <- glht(x, linfct = Z) 
-  df4 <-confint(t36)
-  df4 <- as.data.frame(exp(df4$confint))
-  df4$Group <- i
-  df4$interval = "36+" # enrolled fourth interval
+  df4.1 <-confint(t36)
+  df4.1 <- as.data.frame(exp(df4.1$confint))
+  df4.1$Group <- i
+  df4.1$interval = "≥36" # enrolled fourth interval
   
-  results <-rbind(results, df1, df2, df3, df4)  # this puts the results from each loop round in the results data file
+  results <-rbind(results, df1, df2, df3, df4.1)  # this puts the results from each loop round in the results data file
 }
 
 results$category = "Enrolled"
@@ -1683,87 +1752,87 @@ L <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1), 1) # Not enrolled 
   df1<-confint(t0)
   df1 <- as.data.frame(exp(df1$confint))
   df1$Group <- "Overall"
-  df1$interval = "0-<12"
+  df1$interval = "0 to ≥12"
   df1$category ="continuous" # first interval
   
   t0<- glht(x, linfct = B) 
   df2<-confint(t0)
   df2 <- as.data.frame(exp(df2$confint))
   df2$Group <- "Overall"
-  df2$interval = "0-<12"
+  df2$interval = "0 to ≥12"
   df2$category ="discontinuous" # first interval
   
   t0<- glht(x, linfct = C) 
   df3<-confint(t0)
   df3 <- as.data.frame(exp(df3$confint))
   df3$Group <- "Overall"
-  df3$interval = "0-<12"
+  df3$interval = "0 to ≥12"
   df3$category ="other" # first interval
   
   t12<- glht(x, linfct = D) 
-  df4<-confint(t12)
-  df4 <- as.data.frame(exp(df4$confint))
-  df4$Group <- "Overall"
-  df4$interval = "12-<24"
-  df4$category ="continuous" # second interval
+  df4.2<-confint(t12)
+  df4.2 <- as.data.frame(exp(df4.2$confint))
+  df4.2$Group <- "Overall"
+  df4.2$interval = ">12 to ≥24"
+  df4.2$category ="continuous" # second interval
   
   t12<- glht(x, linfct = E) 
   df5<-confint(t12)
   df5 <- as.data.frame(exp(df5$confint))
   df5$Group <- "Overall"
-  df5$interval = "12-<24"
+  df5$interval = ">12 to ≥24"
   df5$category ="discontinuous" # second interval
   
   t12<- glht(x, linfct = F) 
   df6<-confint(t12)
   df6 <- as.data.frame(exp(df6$confint))
   df6$Group <- "Overall"
-  df6$interval = "12-<24"
+  df6$interval = ">12 to ≥24"
   df6$category ="other" # second interval
   
   t24<- glht(x, linfct = G) 
   df7<-confint(t24)
   df7 <- as.data.frame(exp(df7$confint))
   df7$Group <- "Overall"
-  df7$interval = "24-<36"
+  df7$interval = ">24 to ≥36"
   df7$category ="continuous" # third interval
   
   t24<- glht(x, linfct = H) 
-  df8<-confint(t24)
-  df8<- as.data.frame(exp(df8$confint))
-  df8$Group <- "Overall"
-  df8$interval = "24-<36"
-  df8$category ="discontinuous" # third interval
+  df8.2<-confint(t24)
+  df8.2<- as.data.frame(exp(df8.2$confint))
+  df8.2$Group <- "Overall"
+  df8.2$interval = ">24 to ≥36"
+  df8.2$category ="discontinuous" # third interval
   
   t24<- glht(x, linfct = I) 
   df9<-confint(t24)
   df9 <- as.data.frame(exp(df9$confint))
   df9$Group <- "Overall"
-  df9$interval = "24-<36"
+  df9$interval = ">24 to ≥36"
   df9$category ="other" # third interval
   
   t36<- glht(x, linfct = J) 
   df10<-confint(t36)
   df10 <- as.data.frame(exp(df10$confint))
   df10$Group <- "Overall"
-  df10$interval = "36+"
+  df10$interval = "≥36"
   df10$category ="continuous" # fourth interval
   
   t36<- glht(x, linfct = K) 
   df11<-confint(t36)
   df11<- as.data.frame(exp(df11$confint))
   df11$Group <- "Overall"
-  df11$interval = "36+"
+  df11$interval = "≥36"
   df11$category ="discontinuous" # fourth interval
   
   t36<- glht(x, linfct = L) 
   df12<-confint(t36)
   df12 <- as.data.frame(exp(df12$confint))
   df12$Group <- "Overall"
-  df12$interval = "36+"
+  df12$interval = "≥36"
   df12$category ="other" # fourth interval
   
-  results <-rbind(df1, df2, df3, df4, df5, df6, df7, df8, df9, df10, df11, df12)  # this puts the results from each loop round in the results data file
+  results <-rbind(df1, df2, df3, df4.2, df5, df6, df7, df8.2, df9, df10, df11, df12)  # this puts the results from each loop round in the results data file
 
 SuppTable6c <- results
 ```
@@ -1796,7 +1865,6 @@ SuppTable6c %>%
 # SUPPLEMENTARY TABLE 6: HRs by time interval
 ```{r}
 SuppTable6 <- rbind(SuppTable6a, SuppTable6b, SuppTable6c)
-
 ```
 
 # Effect modification by sex
@@ -1992,14 +2060,15 @@ SuppTable7c <- rbind(a,b,c,d,f,h,i,j,k, m,n,o,p,r,s,t,u,v,w)
 ```{r}
 # combine age, race/ethnicity, and cancer type specific results
 SuppTable7<- rbind(SuppTable7a, SuppTable7b, SuppTable7c)
+
 table(SuppTable7$rowname)
 
 SuppTable7 <- SuppTable7 %>%
   rename(Category = rowname) %>%
-  mutate(Category = case_when(Category == "varContinuous" ~ "Continuous",
-            Category == "varDiscontinuous" ~ "Discontinuous",
-            Category == "varOther" ~ "Other",
-            Category == "varEnrolled" ~ "Enrolled")) %>%
+  mutate(Category = case_when(Category == "varContinuous" ~ "Continuous vs. Not enrolled",
+            Category == "varDiscontinuous" ~ "Discontinuous vs. Not enrolled",
+            Category == "varOther" ~ "Other vs. Not enrolled",
+            Category == "varEnrolled" ~ "Enrolled vs. Not enrolled")) %>%
   mutate(Group2 = case_when(Group %in% c("0-4", "5-9", "10-14", "15-19") ~ "Age",
                             Group %in% c("I. Leukemias, myeloproliferative diseases, and myelodysplastic diseases", "II. Lymphomas and reticuloendothelial neoplasms", "III. CNS and miscellaneous intracranial and intraspinal neoplasms", "IV. Neuroblastoma and other peripheral nervous cell tumors", "V. Retinoblastoma", "VI. Renal tumors", "VII. Hepatic tumors", "VIII. Malignant bone tumors", "IX. Soft tissue and other extraosseous sarcomas",  "X. Germ cell tumors, trophoblastic tumors, and neoplasms of gonads", "XI. Other malignant epithelial neoplasms and malignant melanomas", "XII. Other and unspecified malignant neoplasms") ~ "CancerType",
                             Group %in% c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic API", "Non-Hispanic Other", "Hispanic") ~ "Race"))
@@ -2041,12 +2110,12 @@ SuppTable7$Abbrev <- fct_rev(SuppTable7$Abbrev)
 - Medicaid enrollment variable
 ```{r}
 plot1 <- SuppTable7 %>%
-  filter(Category == "Enrolled", Group2 == "Age") %>%
+  filter(Category == "Enrolled vs. Not enrolled", Group2 == "Age") %>%
 ggplot() +
-  geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category)) + 
+  geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category), colour = "black") + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1, colour = "black") +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -2061,18 +2130,18 @@ ggplot() +
   labs(color = NULL, title = " ", x = "") +
   ylim(0.5,3) +
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + 
-          ggtitle("A") + theme(plot.title = element_text(face="bold")) +
-  scale_color_manual(breaks = c("Enrolled"), values=c("black")) +
+          ggtitle("A. Age group") + theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Enrolled vs. Not enrolled"), values=c("black")) +
   theme(legend.title=element_blank())
 plot1 
 
 plot2 <-SuppTable7 %>%
-  filter(Category == "Enrolled", Group2 == "Race") %>% 
+  filter(Category == "Enrolled vs. Not enrolled", Group2 == "Race") %>% 
   ggplot() +
-  geom_point(aes(y=HR, x = Abbrev, group = Category, color = Category)) + 
+  geom_point(aes(y=HR, x = Abbrev, group = Category, color = Category), colour = "black") + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1, colour = "black") +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -2086,8 +2155,8 @@ plot2 <-SuppTable7 %>%
   coord_flip() +
   labs(color = NULL, title = " ", x = "") +
   ylim(0.5,5) +
-  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("C") +theme(plot.title = element_text(face="bold")) +
-  scale_color_manual(breaks = c("Enrolled"),
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("C. Race/Ethnicity") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Enrolled vs. Not enrolled"),
                         values=c("black")) +
   theme(legend.title=element_blank())
 
@@ -2096,12 +2165,12 @@ plot2
 
 
 plot3 <-SuppTable7 %>%
-  filter(Category == "Enrolled", Group2 == "CancerType", Abbrev != "OTHUN") %>%
+  filter(Category == "Enrolled vs. Not enrolled", Group2 == "CancerType", Abbrev != "OTHUN") %>%
   ggplot() +
-  geom_point(aes(y=HR, x = Abbrev, group = Category, color = Category)) + 
+  geom_point(aes(y=HR, x = Abbrev, group = Category, color = Category), colour = "black") + 
   geom_hline(yintercept =1, linetype=2) +
   theme(axis.text.y=element_blank()) +
-  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1) +
+  geom_errorbar(aes(y=HR, x=Abbrev, group = Category, color = Category, ymax = `2.5 %`, ymin = `97.5 %`), width = 0.1, colour = "black") +
   theme_bw() +
   theme(axis.line = element_line(colour = "black"),
     panel.grid.major = element_blank(),
@@ -2115,8 +2184,8 @@ plot3 <-SuppTable7 %>%
   coord_flip() +
   labs(color = NULL, title = " ", x = "") +
   ylim(0.5,3.6) +
-  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("E") +theme(plot.title = element_text(face="bold")) +
-  scale_color_manual(breaks = c("Enrolled"),
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("E. Cancer type") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Enrolled vs. Not enrolled"),
                         values=c("black")) +
   theme(legend.title=element_blank())
 
@@ -2126,10 +2195,12 @@ plot3
 # Supplementary FIGURE 1: Effect modification by age, race, cancer type
 - mcont66
 ```{r}
-SuppTable7$Category <- factor(SuppTable7$Category, levels = c("Enrolled", "Discontinuous", "Other",  "Continuous"))
+SuppTable7$Category <- factor(SuppTable7$Category, levels = c("Enrolled vs. Not enrolled", "Discontinuous vs. Not enrolled", "Other vs. Not enrolled",  "Continuous vs. Not enrolled"))
+
+
 
 plot4 <- SuppTable7 %>%
-  filter(Category != "Enrolled", Group2 == "Age") %>%
+  filter(Category != "Enrolled vs. Not enrolled", Group2 == "Age") %>%
 ggplot() +
   geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category), na.rm=TRUE, position=position_dodge(width = 0.9)) + 
   geom_hline(yintercept =1, linetype=2) +
@@ -2149,15 +2220,14 @@ ggplot() +
   coord_flip() +
   labs(color = NULL, title = " ", x = "") +
   ylim(0.5,3) +
-  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("B") +theme(plot.title = element_text(face="bold")) +
-  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
-                        values=c("red", "cyan3", "blue")) +
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("B. Age group") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled", "Continuous vs. Not enrolled", "Other vs. Not enrolled"), values=c("red", "cyan3", "blue")) +
   theme(legend.title=element_blank())
  
 plot4
 
 plot5 <-SuppTable7 %>%
-  filter(Category != "Enrolled", Group2 == "Race") %>% 
+  filter(Category != "Enrolled vs. Not enrolled", Group2 == "Race") %>% 
   ggplot() +
   geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category), na.rm=TRUE, position=position_dodge(width = 0.9)) + 
   geom_hline(yintercept =1, linetype=2) +
@@ -2177,8 +2247,8 @@ plot5 <-SuppTable7 %>%
   coord_flip() +
   labs(color = NULL,title = " ", x = "") +
   ylim(0.5,7) +
-  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("D") +theme(plot.title = element_text(face="bold")) +
-  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("D. Race/Ethnicity") +theme(plot.title = element_text(face="bold")) +
+  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled", "Continuous vs. Not enrolled", "Other vs. Not enrolled"),
                         values=c("red", "cyan3", "blue")) +
   theme(legend.title=element_blank())
 
@@ -2186,7 +2256,7 @@ plot5
 
 
 plot6 <-SuppTable7 %>%
-  filter(Category != "Enrolled", Group2 == "CancerType", !Abbrev %in% c("RB", "OTHUN")) %>%
+  filter(Category != "Enrolled vs. Not enrolled", Group2 == "CancerType", !Abbrev %in% c("RB", "OTHUN")) %>%
   ggplot() +
   geom_point(aes(y=HR, x = Abbrev, group=Category, color = Category), na.rm=TRUE, position=position_dodge(width = 0.9)) + 
   geom_hline(yintercept =1, linetype=2) +
@@ -2206,8 +2276,8 @@ plot6 <-SuppTable7 %>%
   coord_flip() +
   labs(color = NULL, title = " ", x = "") +
   ylim(0.5,4.5) +
-  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("F") +theme(plot.title = element_text(face="bold"))+
-  scale_color_manual(breaks = c("Discontinuous", "Continuous", "Other"),
+  theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) + ggtitle("F. Cancer type") +theme(plot.title = element_text(face="bold"))+
+  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled", "Continuous vs. Not enrolled", "Other vs. Not enrolled"),
                         values=c("red", "cyan3", "blue"))+
   theme(legend.title=element_blank())
 
@@ -2225,7 +2295,7 @@ dev.off()
 
 # Clean up tables
 ```{r}
-Table2 <- Table2%>%
+Table2 <- Table2 %>%
   rename(`lower 95% CI` = cluster.lowCI,
          `upper 95% CI` = cluster.highCI) %>%
   mutate_if(is.numeric, round, 2)
@@ -2236,10 +2306,10 @@ Table3 <- Table3 %>%
   rename(Category = rowname,
          "lower 95% CI" = "2.5 %",
          "upper 95% CI" = "97.5 %") %>%
-  mutate(Category = case_when(Category == "In_Medicaid_FlagEnrolled" ~ "Enrolled",
-            Category == "mcont66Discontinuous" ~ "Discontinuous",
-            Category == "mcont66Other" ~ "Other",
-            Category == "mcont66Continuous" ~ "Continuous"))  %>%
+  mutate(`Exposure comparison` = case_when(Category == "In_Medicaid_FlagEnrolled" ~ "Enrolled vs. Not enrolled",
+            Category == "mcont66Discontinuous" ~ "Discontinuous vs. Not enrolled",
+            Category == "mcont66Other" ~ "Other vs. Not enrolled",
+            Category == "mcont66Continuous" ~ "Continuous vs. Not enrolled"))  %>%
   mutate_if(is.numeric, round, 2)
   
 Table3$`HR (95% CI)` <-paste0(Table3$HR, " (", Table3$`lower 95% CI`, " to ", Table3$`upper 95% CI`, ")") 
@@ -2302,15 +2372,15 @@ SuppTable6 <- SuppTable6 %>%
          Category = category,
          `lower 95% CI` = lwr,
          `upper 95% CI` = upr) %>%
-  mutate(Category = case_when(Category == "Enrolled"~ "Enrolled",
-            Category == "discontinuous" ~ "Discontinuous",
-            Category == "other" ~ "Other",
-            Category == "continuous" ~ "Continuous")) %>%
+  mutate(`Exposure comparison`= case_when(Category == "Enrolled"~ "Enrolled vs. Not enrolled",
+            Category == "discontinuous" ~ "Discontinuous vs. Not enrolled",
+            Category == "other" ~ "Other vs. Not enrolled",
+            Category == "continuous" ~ "Continuous vs. Not enrolled")) %>%
   mutate_if(is.numeric, round, 2)
 
 SuppTable6$`HR (95% CI)` <-paste0(SuppTable6$Estimate, " (", SuppTable6$`lower 95% CI`, " to ", SuppTable6$`upper 95% CI`, ")") 
 SuppTable6 <- SuppTable6 %>%
-  dplyr::select(4,5,6,7)
+  dplyr::select(4,5,7,8)
 
 # 7
 SuppTable7 <- SuppTable7 %>%
@@ -2319,9 +2389,13 @@ SuppTable7 <- SuppTable7 %>%
   dplyr::select(-7, -8)  %>%
   mutate_if(is.numeric, round, 2)
 
+
 SuppTable7$`HR (95% CI)` <-paste0(SuppTable7$HR, " (", SuppTable7$`lower 95% CI`, " to ", SuppTable7$`upper 95% CI`, ")") 
 SuppTable7 <- SuppTable7 %>%
   dplyr::select(1,6,7)
+
+SuppTable7 <- SuppTable7%>%
+  rename(`Exposure comparison` = Category)
 ```
 
 # Export data to excel (Tables 2-3)
@@ -2336,7 +2410,7 @@ write.xlsx(sheets, file="SEER0to19analysis_tables.xlsx", keepNA=TRUE, overwrite=
 # Export supplementary tables to excel
 ```{r}
 sheets <- list("Supp Table 1 (stage cantype)" = SuppTable1,
-               "Supp Table 2 (surv overall)" = SuppTable2,
+               "Supp Table 2 (surv prob)" = SuppTable2,
                "Supp Table 3 (surv prob age )" = SuppTable3,
                "Supp Table 4 (surv prob race )" = SuppTable4,
                "Supp Table 5 (surv prob can )" = SuppTable5,
@@ -2350,17 +2424,17 @@ write.xlsx(sheets, file="Supplementary tables updated.xlsx", showNA=TRUE, overwr
 # This code validates the function above for clustered SEs using binomial logistic (nnet object is hard to work with for any standard functions that calculate robust or clustered SEs) 
 ```{r}
 # regional vs. in situ/localized
-model1_logit<-glm(stage ~ In_Medicaid_Flag, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Regional")),], family = binomial(link = "logit"))
+model1_logit<-glm(stage ~ In_Medicaid_Flag, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("in situ/localized", "Regional")),], family = binomial(link = "logit"))
 odds.n.ends(model1_logit) # these are CIs without robust SEs
 
 # distant vs. in situ/localized
-model1_logit2<-glm(stage ~ In_Medicaid_Flag, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], family = binomial(link = "logit"))
+model1_logit2<-glm(stage ~ In_Medicaid_Flag, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("in situ/localized", "Distant")),], family = binomial(link = "logit"))
 odds.n.ends(model1_logit2)  # these are CIs without robust SEs
 
-model1_logit3 <-glm(stage ~ mcont66, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], family = binomial(link = "logit"))
+model1_logit3 <-glm(stage ~ mcont66, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("in situ/localized", "Distant")),], family = binomial(link = "logit"))
 odds.n.ends(model1_logit3)  # these are CIs without robust SEs
 
-model1_logit4 <-glm(stage ~ mcont66, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], family = binomial(link = "logit"))
+model1_logit4 <-glm(stage ~ mcont66, data = seer0to19_stage[which(seer0to19_stage$stage %in% c("in situ/localized", "Distant")),], family = binomial(link = "logit"))
 odds.n.ends(model1_logit4)  # these are CIs without robust SEs
 ```
 
@@ -2373,7 +2447,7 @@ exp(0.156116634 + (1.96*0.02744999))
 exp(0.156116634 - (1.96*0.02744999)) 
 
 
-model2_logit_RSE <- miceadds::glm.cluster(data=seer0to19_stage[which(seer0to19_stage$stage %in% c("In situ/localized", "Distant")),], formula= stage ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, cluster="state", family="binomial")
+model2_logit_RSE <- miceadds::glm.cluster(data=seer0to19_stage[which(seer0to19_stage$stage %in% c("in situ/localized", "Distant")),], formula= stage ~ In_Medicaid_Flag + race_cat2 + age_cat + Yost_ACS_2006_2010_quintile, cluster="state", family="binomial")
 summary(model2_logit_RSE)
 
 exp(0.354153776)
