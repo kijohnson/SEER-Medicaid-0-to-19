@@ -259,7 +259,7 @@ seer0to39<-seer0to39 %>%
         
         mutate(race_cat2 = case_when(race_cat == 0 ~ 0, # Non-Hispanic White
                                      race_cat == 1 ~ 1, # Non-Hispanic Black
-                                     race_cat %in% c(2,3,4,5) ~ 2)) %>% # Non-Hispanic Other
+                                     race_cat %in% c(2,3,4) ~ 2)) %>% # Non-Hispanic Other
   
         mutate(sex = case_when(sex == 1 ~ 0, # "Male"
                                 sex == 2 ~ 1, # "Female"
@@ -267,7 +267,7 @@ seer0to39<-seer0to39 %>%
   
         mutate(can_dead = case_when(SEERcausespecificdeathclassific == 0 ~0, # Alive or dead of other cause
                                 SEERcausespecificdeathclassific == 1 ~1)) # Dead from cancer
-# note 8 an 9 are missing or N/A
+# note 8 an 9 are dead missing COD and N/A
 
 table(seer0to39$SEERcausespecificdeathclassific, useNA = "always")
 
@@ -277,7 +277,7 @@ seer0to39$race_cat<-factor(seer0to39$race_cat, levels=c(0:4), labels=c("White", 
 seer0to39$race_cat2<-factor(seer0to39$race_cat2, levels=c(0:2), labels=c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic Other"))
 seer0to39$hispanic<-factor(seer0to39$hispanic, levels=c(0:1), labels=c("Non-Hispanic", "Hispanic"))
 seer0to39$race_ethnicity<-factor(seer0to39$race_ethnicity, levels=c(0:4), labels=c("Non-Hispanic White", "Non-Hispanic Black", "Non-Hispanic API", "Non-Hispanic Other",  "Hispanic")) 
-seer0to39$sex <- factor(seer0to39$sex, levels = c(0:2), labels = c("Male", "Female", "Not Stated"))
+seer0to39$sex <- factor(seer0to39$sex, levels = c(0:2), labels = c("Male", "Female", "Unknown"))
 
 # check variables
 table(seer0to39$age_cat, useNA = "always")
@@ -287,21 +287,21 @@ table(seer0to39$race_ethnicity, useNA = "always")
 table(seer0to39$can_dead, useNA = "always")
 table(seer0to39$sex, useNA = "always")
 
-# calculate follow-up time from month of dx, recode year of dx TO Month_of_last_follow_up_recode, Year_of_last_follow_up_recode. The difference between these variable dates would provide months of follow-up
+# calculate follow-up time from month of dx, recode year of dx TO Month_of_last_follow_up_recode, Year_of_last_follow_up_recode. The difference between these variable dates provides months of follow-up
 summary(seer0to39$Month_of_diagnosis_recode)
 summary(seer0to39$Year_of_diagnosis)
 summary(as.numeric(seer0to39$Month_of_last_follow_up_recode))
-seer0to39$Month_of_last_follow_up_recode<-as.numeric(seer0to39$Month_of_last_follow_up_recode) # make variable numeric
-seer0to39$SEER_DateofDeath_Month<-as.numeric(seer0to39$SEER_DateofDeath_Month) # make variable numeric
+seer0to39$Month_of_last_follow_up_recode <- as.numeric(seer0to39$Month_of_last_follow_up_recode) # make variable numeric
+seer0to39$SEER_DateofDeath_Month <- as.numeric(seer0to39$SEER_DateofDeath_Month) # make variable numeric
 summary(seer0to39$Month_of_last_follow_up_recode)
 summary(seer0to39$Year_of_last_follow_up_recode)
 summary(seer0to39$SEER_DateofDeath_Month)
 summary(seer0to39$SEER_DateofDeath_Year)
 
 # assign a date of diagnosis using 15 as the day because there is no day of dx so assume mean is 15
-seer0to39$proxy_day_of_dx <-15
-seer0to39$proxy_day_of_fu <-15
-seer0to39$proxy_day_of_dth <-15
+seer0to39$proxy_day_of_dx <- 15
+seer0to39$proxy_day_of_fu <- 15
+seer0to39$proxy_day_of_dth <- 15
 
 seer0to39<-seer0to39 %>%
   mutate(proxy_dx_date = make_date(Year_of_diagnosis, Month_of_diagnosis_recode, proxy_day_of_dx)) %>% # make date of dx
@@ -463,7 +463,7 @@ seer0to19<-seer0to19 %>%
   filter(!is.na(Yost_ACS_2006_2010_quintile)) #30,654
 
 
-seer0to19b <- seer0to19
+seer0to19b <- seer0to19 # using to not write over seer0to19 
 
 missing_data_percent  <- 100- (30654/31410)*100
 missing_data_percent  # <2.5%
@@ -483,6 +483,7 @@ seer0to19 <- seer0to19 %>%
                              mcontb == 0 ~ 1, # continuous
                              mcontb == 1 ~ 2, # discontinuous
                              mcontb == 2 ~ 3)) %>% # Other
+  # not used for this paper
   mutate(mcont66b = case_when(In_Medicaid_Flag == 0 ~ 0, # not linked
                              mcontb2 == 0 ~ 1, # continuous
                              mcontb2 == 1 ~ 2, # discontinuous
@@ -498,6 +499,7 @@ table(seer0to19$mcont66b, seer0to19$In_Medicaid_Flag, useNA = "always")
 
 # create factor variable for analyses
 seer0to19$mcont66 <- factor(seer0to19$mcont66, levels = c(0:3), labels = c("Not enrolled", "Continuous", "Discontinuous", "Other"))
+
 seer0to19$mcont66b <- factor(seer0to19$mcont66b, levels = c(0:4), labels = c("Not enrolled", "Continuous", "Discontinuous", "Other", "At diagnosis"))
 
 table(seer0to19$mcont66b)
@@ -561,15 +563,15 @@ label(seer0to19$In_Medicaid_Flag) <- "Enrolled in Medicaid"
 table(seer0to19$can_dead2)
 table(seer0to19$In_Medicaid_Flag)
 
+# used in paper
 table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66, droplevels = TRUE, seer0to19)
 
-table1(~can_type|In_Medicaid_Flag, seer0to19)
+# table1(~can_type|In_Medicaid_Flag, seer0to19)
 
-
-table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66b, droplevels = TRUE, seer0to19)
+# table1(~age_cat + sex  + race_ethnicity + Yost_ACS_2006_2010_quintile + In_Medicaid_Flag  + stage + fumo  + can_type + can_dead2|mcont66b, droplevels = TRUE, seer0to19)
 ```
 
-# FOR REVISION (insurance distribution)
+# FOR REVISION response (insurance distribution)
 ```{r}
 # classify primary payor variable
 class(seer0to19$Primary_Payer_at_DX)
@@ -613,6 +615,9 @@ seer0to19_stage <- seer0to19 %>%
 # the mlogit.cluster function does not like labels
 seer0to19_stage <- seer0to19_stage %>% 
   remove_labels()
+
+table(seer0to19_stage$mcont66, seer0to19_stage$stage)
+
 ```
 
 # FOR REVISION QUESTION (why not use AJCC staging vs. summary stage)--check missing data by cancer type for both
@@ -819,6 +824,8 @@ df20
 df20<-df20[-c(1, 5:25, 29:48),]
 df20 <- tibble::rownames_to_column(df20, "Category") # Apply rownames_to_column
 df20  
+
+p
 ```
 
 # SUPPLEMENTARY TABLE 1a by cancer type with clustered standard errors for confidence interval calculation (In_Medicaid_Flag)
@@ -862,7 +869,7 @@ df1a <-rbind(df2a, df1a)
 
 SuppTable1a<- df1a[order(df1a$CancerType),] # In_Medicaid_Flag
 
-# Mcont66
+# mcont66
 df3a <- data.frame(matrix(ncol=6, nrow=0)) #create the table
 columns<-c("Category", "OR","cluster.lowCI", "cluster.highCI", "CancerType") #label the columns with names
 colnames(df3a)<-columns
@@ -1043,10 +1050,11 @@ Plot3 <- SuppTable1a %>%
   labs(color = NULL, title = "C. Regional vs. in situ/localized", x = "Cancer type") +
   ylim(0,4.0) +
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
-  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled", "Continuous vs. Not enrolled", "Other vs. Not enrolled"),
+  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled","Continuous vs. Not enrolled", "Other vs. Not enrolled"),
                         values=c("red", "cyan3", "blue")) 
 
 Plot3
+
 table(SuppTable1a$`Exposure comparison`)
 
 Plot4 <- SuppTable1a %>%
@@ -1072,7 +1080,7 @@ Plot4 <- SuppTable1a %>%
   labs(color = NULL, title = "D. Distant vs. in situ/localized", x = "Cancer type") +
   ylim(0,5.5) +
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=9, face="bold")) +
-  scale_color_manual(breaks = c("Discontinuous vs. Not enrolled", "Continuous vs. Not enrolled", "Other vs. Not enrolled"),
+  scale_color_manual(breaks = c( "Discontinuous vs. Not enrolled","Continuous vs. Not enrolled", "Other vs. Not enrolled"),
                         values=c("red", "cyan3", "blue")) 
 
 Plot4
@@ -1147,7 +1155,7 @@ plot1$plot + plot2$plot + plot_layout(ncol=1, nrow=2, guides='keep') &
 
 dev.off()
 ```
-# Survival plots with discontinuous divided to at diagnosis and the rest
+# Survival plots with discontinuous divided to at diagnosis and the rest (NOT IN PAPER)
 ```{r}
 # mcont66b
  plot3 <- ggsurvplot(fit = survfit(Surv(fumo, can_dead) ~ mcont66b, data = seer0to19 ), 
@@ -1175,21 +1183,19 @@ dev.off()
 
 plot3
 
-pdf("Figure 3.pdf", width=8.5, height=11, paper="USr")
-plot1$plot + plot2$plot + plot_layout(ncol=1, nrow=2, guides='keep') &
-  theme(legend.position='bottom')
-
-dev.off()
 ```
 
 # SUPPLEMENTARY TABLE 2: Estimate survival time 0 to 19 at 60 mo
 ```{r}
 # Overall
-overall <- summary(survfit(Surv(fumo, can_dead) ~ 1, data = seer0to19), times=60) # estimates 60 month survival time
+overall <- summary(survfit(Surv(fumo, can_dead) ~ 1, data = seer0to19), times=60) # estimates 60 month survival time overall
 
 overall <- as.data.frame(cbind(overall$time, round(overall$surv*100, 2), round(overall$lower*100, 2), round(overall$upper*100,2))) # makes dataframe
+
 overall$Category <- "Overall"
+
 overall <- setNames(overall, c("Time (months)", "Survival Percentage", "Lower CI", "Upper CI", "Category")) # gives column names
+
 overall <- overall %>% select("Category","Time (months)", "Survival Percentage", "Lower CI", "Upper CI")
 
 # In_Medicaid_Flag
@@ -1434,7 +1440,7 @@ res.cox1
 summary(res.cox1)
 
 # adjusted models 0 to 19
-res.cox2 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race age and a measure of poverty
+res.cox2 <- coxph(Surv(fumo, can_dead) ~ In_Medicaid_Flag + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19) # Model adjusted for race, age and a measure of poverty
 res.cox2
 summary(res.cox2)
 
@@ -1505,11 +1511,11 @@ summary(res.cox4.2)
 # Test of the ph assumption for adjusted models
 ```{r}
 # adjusted models 0 to 19
-Medflag <- cox.zph(res.cox2, terms = FALSE)
+Medflag <- cox.zph(res.cox2, terms = TRUE)
 Medflag
 
 # mcont66 adjusted models 0 to 19
-Med4cat <- cox.zph(res.cox4, terms = FALSE)
+Med4cat <- cox.zph(res.cox4, terms = TRUE)
 Med4cat
 # violated for both
 
@@ -1559,6 +1565,7 @@ seer0to19.cp.format <- within(seer0to19.cp.format, {
 
 # Reordering
 seer0to19.cp.format <- seer0to19.cp.format[with(seer0to19.cp.format, order(patient_id, fumo_half)),]  # sort by patient_id and then by fumo
+
 summary(seer0to19$fumo_half)
 
 ```
@@ -1578,7 +1585,7 @@ m
 m2
 
 library(multcomp)
-X<- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1)
+X<- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # number of 0's and 1's in vector is equal to number of coefficients in model
 
 t <- glht(m, linfct = X) 
 summary(t) # here are the results
@@ -1587,12 +1594,15 @@ CI <- confint(t)
 CI <- as.data.frame(exp(CI$confint))
 # end testing
 
+# set up matrices to calculate HRs for different intervals
 W <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) 
 X <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,1,0,0), 1)
 Y <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,1,0), 1)
 Z <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,1), 1)
 
 x <- coxph(SurvObj ~ In_Medicaid_Flag + In_Medicaid_Flag*strata(interval) + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19.cp.format) 
+
+
   t0<- glht(x, linfct = W) 
   df1<-confint(t0)
   df1 <- as.data.frame(exp(df1$confint))
@@ -1625,6 +1635,9 @@ SuppTable6a <- results
 
 # Graph hazard ratios and confidence intervals across time for enrolled variable
 ```{r}
+# factor for order
+results$interval <- factor(results$interval, levels = c("0 to ≥12", ">12 to ≥24", ">24 to ≥36", "≥36"))
+
 p<- results %>%
   ggplot() +
   geom_point(aes(y=Estimate, x= interval), na.rm=TRUE, position=position_dodge(width=0.9), size =4) + 
@@ -1693,7 +1706,9 @@ SuppTable6b <- results
 
 # Group by cancer type and plot
 ```{r}
-SuppTable6b %>%
+
+
+plot <- SuppTable6b %>%
   group_by(Group) %>%
   ggplot() +
   geom_point(aes(y=Estimate, x=interval)) + 
@@ -1714,6 +1729,8 @@ SuppTable6b %>%
   facet_wrap(~Group, nrow=4, ncol=2, scales = "free") +
   labs( x = "Time interval") + 
   theme(strip.placement = "inside", legend.position = "bottom",  strip.text = element_text(size = 9, face="bold", color="black"), strip.background = element_rect(fill="lightgray"), plot.title = element_text(face="bold"), legend.text=element_text(size=12, face="bold"))
+
+plot
 ```
 # run models based on intervals for mcont66
 ```{r}
@@ -1721,7 +1738,11 @@ SuppTable6b %>%
 m <-coxph(SurvObj ~ mcont66 + mcont66*strata(interval) + age_cat + race_ethnicity +  Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19.cp.format) 
 m
 
-X <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1)
+X <- matrix(c(0,1,0,0,0,
+              0,0,0,0,0,
+              0,0,0,0,0,
+              0,0,0,0,0,
+              0,0,0), 1) # 23 coefficients
 
 t <- glht(m, linfct = X) 
 summary(t) # here are the results
@@ -1731,21 +1752,21 @@ CI <- as.data.frame(exp(CI$confint))
 # end testing
 
 
-A <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # discontinuous 1st interval
-B <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # other 1st interval
-C <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # Not enrolled 1st interval
+A <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # Continuous 1st interval
+B <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # Discontinuous 1st interval
+C <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), 1) # Other 1st interval
 
-D <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0), 1) # discontinuous 2nd interval
-E <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0), 1) # other 2nd interval
-F <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0), 1) # Not enrolled 2nd interval
+D <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0), 1) # Continuous 2nd interval
+E <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0), 1) # Discontinuous 2nd interval
+F <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0), 1) # Other 2nd interval
 
-G <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0), 1) # discontinuous 3rd interval
-H <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0), 1) # other 3rd interval
-I <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0), 1) # Not enrolled 3rd interval
+G <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0), 1) # Continuous 3rd interval
+H <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0), 1) # Discontinuous 3rd interval
+I <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0), 1) # Other 3rd interval
 
-J <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0), 1) # discontinuous 3rd interval
-K <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0), 1) # other 3rd interval
-L <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1), 1) # Not enrolled 3rd interval
+J <- matrix(c(1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0), 1) # Continuous 4th interval
+K <- matrix(c(0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0), 1) # Discontinuous 4th interval
+L <- matrix(c(0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1), 1) # Other 4th interval
 
   x <- coxph(SurvObj ~ mcont66 + mcont66*strata(interval) + race_ethnicity + age_cat + Yost_ACS_2006_2010_quintile + cluster(state), data = seer0to19.cp.format) 
   t0<- glht(x, linfct = A) 
@@ -2053,7 +2074,6 @@ w<-cox2("XI. Other malignant epithelial neoplasms and malignant melanomas", x$mc
 # y<-cox2("XII. Other and unspecified malignant neoplasms", x$mcont66) # convergence issues
 
 SuppTable7c <- rbind(a,b,c,d,f,h,i,j,k, m,n,o,p,r,s,t,u,v,w)
-
 ```
 
 # SUPPLEMENTARY TABLE 7: Effect modifcation table
