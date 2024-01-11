@@ -8,6 +8,7 @@ output: html_document
 # Open libraries
 ```{r}
 # install.packages("pacman")
+# install.packages("pacman")
 pacman::p_load(readr, dplyr, tidyverse, lubridate, survival, survminer, hablar, table1, patchwork, openxlsx, DiagrammeR, lmtest, forestplot, MASS, nnet, broom, forcats, sandwich, mlogit, sjstats, odds.n.ends, labelled, readxl)
 ```
 # Functions used
@@ -187,7 +188,7 @@ mcaid<- read_xlsx("/Volumes/kijohnson/Active/mcaid0to39KJ.xlsx") # created in co
 df <- enroll_seerids %>% 
    find_duplicates(patient_id, YEAR) # this identifies patients in multiple states in the same year
  
-x <- unique(df$patient_id) # 841 vector of unique ids who had enrollment in multiple states to exclude in exclusion section
+x <- unique(df$patient_id) # 3588 vector of unique ids who had enrollment in multiple states to exclude in exclusion section
 ```
 
 # Reduce cancer dataset to variables needed for analysis
@@ -515,7 +516,7 @@ table(seer0to19$ICCCsiterecode_ICD_O_3_WHO_2008, seer0to19$can_type,  useNA= "al
 
 # FIGURE 1
 ```{r}
-Figure1<-grViz("digraph flowchart {
+Figure1 <- grViz("digraph flowchart {
       # node definitions with substituted label text
       node [fontname = Helvetica, shape = rectangle, fontsize=16]        
       tab1 [label = '@@1']
@@ -536,7 +537,16 @@ Figure1<-grViz("digraph flowchart {
       [6]: 'Excluding 163 individuals with missing data on cancer specific cause of death n = 31,247'
       [7]: 'Excluding 593 individuals individuals with missing data on Yost ACS 2006 to 2010 Quintile n = 30,654'
       ")
+
 Figure1
+
+library(DiagrammeRsvg)  # for conversion to svg
+library(rsvg)  # for saving svg
+
+Figure1 %>%
+   DiagrammeRsvg::export_svg() %>% 
+  charToRaw() %>% 
+  rsvg::rsvg_pdf("Figure1.pdf")
 ```
 
 
@@ -904,7 +914,7 @@ df3a <-rbind(df4a, df3a)
 SuppTable1b<- df3a[order(df3a$CancerType),] # mcont66
 ```
 
-# SUPPLEMENTAEY TABLE 1:
+# SUPPLEMENTAEY TABLE 1: Stage at diagnosis cancer type analysis
 ```{r}
 SuppTable1 <- rbind(SuppTable1a, SuppTable1b)
 
@@ -1026,7 +1036,7 @@ Plot2
 # FIGURE 2:  Stage analysis by cancer type mcont66
 ```{r}
 # graph ORs and 95% CIs
-SuppTable1a$`Exposure comparison` <- factor(SuppTable1a$`Exposure comparison`, levels = c("Enrolled vs. Not enrolled", "Discontinuous vs. Not enrolled", "Other vs. Not enrolled", "Continuous vs. Not enrolled"))
+SuppTable1$`Exposure comparison` <- factor(SuppTable1$`Exposure comparison`, levels = c("Enrolled vs. Not enrolled", "Discontinuous vs. Not enrolled", "Other vs. Not enrolled", "Continuous vs. Not enrolled"))
 
 Plot3 <- SuppTable1a %>%
   filter(`Exposure comparison` != "Enrolled vs. Not enrolled", `Stage outcome comparison` == "Regional vs. in situ/localized") %>%
@@ -1539,7 +1549,7 @@ ggcoxdiagnostics(res.cox4, type = "schoenfeld")
 # Split a survival data set at specified times to form a counting process format
 # For those with survival time of 0, add 0.5 mo because otherwise splitting doesn't work and it is more accurate
 
-# the if_elsee function does not like labels
+# the if_else function does not like labels
 seer0to19 <- seer0to19 %>% 
   remove_labels()
 
